@@ -39,9 +39,10 @@ int read_lcm(unsigned char cmd, unsigned char *buf,
 	int ret = 0;
 
 	DISPFUNC();
+#ifdef CONFIG_LCM_PANEL_TYPE_TFT
 	_primary_path_switch_dst_lock();
 	primary_display_manual_lock();
-
+#endif
 	primary_display_idlemgr_kick(__func__, 0);
 
 	if (_is_power_on_status(DISP_MODULE_DSI0))
@@ -49,9 +50,9 @@ int read_lcm(unsigned char cmd, unsigned char *buf,
 					cmd, buf, buf_size, sendhs);
 	else
 		DISPERR("%s invalid: dsi is power off\n", __func__);
-
+#ifdef CONFIG_LCM_PANEL_TYPE_TFT
 	primary_display_manual_unlock();
 	_primary_path_switch_dst_unlock();
-
+#endif
 	return ret;
 }

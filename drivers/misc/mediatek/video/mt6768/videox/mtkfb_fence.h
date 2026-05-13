@@ -30,6 +30,15 @@ extern "C" {
 
 #define MTK_FB_KERNEL_NO_ION_FD    (-99)
 
+struct sync_timeline;
+struct fence_data;
+
+struct sync_timeline *timeline_create(const char *name);
+void timeline_inc(struct sync_timeline *obj, int val);
+int fence_create(struct sync_timeline *obj, struct fence_data *data);
+
+void timeline_destroy(struct sync_timeline *obj);
+
 struct fb_overlay_buffer_t {
 	/* Input */
 	int layer_id;
@@ -240,8 +249,6 @@ void mtkfb_release_session_fence(unsigned int session_id);
 struct disp_sync_info *_get_sync_info(unsigned int session_id,
 					unsigned int timeline_id);
 
-struct ion_handle *disp_snyc_get_ion_handle(unsigned int session_id,
-	unsigned int timeline_id, unsigned int idx);
 
 #ifdef __cplusplus
 } /* extern C */

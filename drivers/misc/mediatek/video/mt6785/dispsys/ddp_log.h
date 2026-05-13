@@ -55,7 +55,7 @@
 #define DISP_LOG_E(fmt, args...)					\
 	do {								\
 		dprec_logger_pr(DPREC_LOGGER_ERROR, fmt, ##args);	\
-		pr_debug("[DDP/"LOG_TAG"]error:"fmt, ##args);		\
+		pr_info("[DDP/"LOG_TAG"]error:"fmt, ##args);		\
 	} while (0)
 
 #define DDPIRQ(fmt, args...)						\

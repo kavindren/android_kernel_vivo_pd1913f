@@ -16,27 +16,43 @@
 
 #include <linux/types.h>
 #include "mtkfb_info.h"
-
 /*************config lcm log format************************/
 extern int lcmpr_debug_enabled;
 #define LCD_INFO(fmt, ...)                                             \
-printk(KERN_INFO "DSI_LCM_INFO: %s(%d): " fmt,                  \
-__func__, __LINE__, ##__VA_ARGS__)
+       printk(KERN_INFO "DSI_LCM_INFO: %s(%d): " fmt,                  \
+              __func__, __LINE__, ##__VA_ARGS__)
 
 #define LCD_DEBUG(fmt, ...)                                            \
-do { if (lcmpr_debug_enabled == 1)                                                      \
-	printk(KERN_DEBUG "DSI_LCM_DEBUG: %s(%d): " fmt,                \
-	__func__, __LINE__, ##__VA_ARGS__);              \
-} while (0)
+       do { if (lcmpr_debug_enabled == 1)                                                      \
+               printk(KERN_DEBUG "DSI_LCM_DEBUG: %s(%d): " fmt,                \
+                      __func__, __LINE__, ##__VA_ARGS__);              \
+       } while (0)
 /******************************************************/
 
 enum panel_aod_power_mode {
-	LCM_PANEL_OFF = 0,
-	LCM_PANEL_ON,
-	LCM_PANEL_AOD,
-	LCM_PANEL_AOD_SUSPEND,
-	LCM_PANEL_STATE_UNKNOWN
+       LCM_PANEL_OFF = 0,
+       LCM_PANEL_ON,
+       LCM_PANEL_AOD,
+       LCM_PANEL_AOD_SUSPEND,
+       LCM_PANEL_STATE_UNKNOWN
 };
+
+/*************config lcm log format************************/
+extern int lcmpr_debug_enabled;
+#define LCM_ERR(fmt, ...)						\
+	printk(KERN_ERR "DSI_LCM_ERR: %s(%d): " fmt,			\
+	       __func__, __LINE__, ##__VA_ARGS__)
+
+#define LCM_INFO(fmt, ...)						\
+	printk(KERN_INFO "DSI_LCM_INFO: %s(%d): " fmt,			\
+	       __func__, __LINE__, ##__VA_ARGS__)
+
+#define LCM_DEBUG(fmt, ...)						\
+	do { if (lcmpr_debug_enabled == 1)							\
+		printk(KERN_DEBUG "DSI_LCM_DEBUG: %s(%d): " fmt,		\
+		       __func__, __LINE__, ##__VA_ARGS__);		\
+	} while (0)
+/******************************************************/
 
 /****************HBM TYPE DEFINE************************/
 #define HBM_USER_AUTO_MODE_LEVEL0 			0

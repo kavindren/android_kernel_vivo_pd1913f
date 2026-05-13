@@ -141,6 +141,7 @@ static struct {
 	{DISP_OPT_REG_PARSER_RAW_DUMP, 0, "DISP_OPT_REG_PARSER_RAW_DUMP"},
 	{DISP_OPT_PQ_REG_DUMP, 0, "DISP_OPT_PQ_REG_DUMP"},
 	{DISP_OPT_AOD, 0, "DISP_OPT_AOD"},
+	{DISP_OPT_AOD_RAMLESS, 0, "DISP_OPT_AOD_RAMLESS"},
 	{DISP_OPT_ARR_PHASE_1, 0, "DISP_OPT_ARR_PHASE_1"},
 	{DISP_OPT_RSZ, 0, "DISP_OPT_RSZ"},
 	{DISP_OPT_RPO, 0, "DISP_OPT_RPO"},
@@ -155,9 +156,9 @@ static struct {
 	{DISP_OPT_OVL_SBCH, 0, "DISP_OPT_OVL_SBCH"},
 	{DISP_OPT_MMPATH, 0, "DISP_OPT_MMPATH"},
 	{DISP_OPT_TUI_MODE, 0, "DISP_OPT_TUI_MODE"},
-	{DISP_OPT_LCM_HBM, 0, "DISP_OPT_LCM_HBM"},
 	/*DynFPS*/
 	{DISP_OPT_DYNAMIC_FPS, 0, "DISP_OPT_DYNAMIC_FPS"},
+	{DISP_OPT_LCM_HBM, 0, "DISP_OPT_LCM_HBM"},
 };
 
 const char *disp_helper_option_spy(enum DISP_HELPER_OPT option)
@@ -378,7 +379,7 @@ void disp_helper_option_init(void)
 	disp_helper_set_option(DISP_OPT_IDLEMGR_DISABLE_ROUTINE_IRQ, 1);
 
 	/* 2. cmd mode + screen idle(need idlemgr) */
-	disp_helper_set_option(DISP_OPT_IDLEMGR_ENTER_ULPS, 1);
+	disp_helper_set_option(DISP_OPT_IDLEMGR_ENTER_ULPS, 0);
 	disp_helper_set_option(DISP_OPT_IDLEMGR_KEEP_LP11, 0);
 
 	/* 3. cmd mode + vdo mode */
@@ -427,6 +428,7 @@ void disp_helper_option_init(void)
 	disp_helper_set_option(DISP_OPT_PQ_REG_DUMP, 0);
 
 	disp_helper_set_option(DISP_OPT_AOD, 1);
+	disp_helper_set_option(DISP_OPT_AOD_RAMLESS, 1);
 
 	/* ARR phase 1 option */
 	disp_helper_set_option(DISP_OPT_ARR_PHASE_1, 0);
@@ -436,17 +438,17 @@ void disp_helper_option_init(void)
 	disp_helper_set_option(DISP_OPT_DUAL_PIPE, 0);
 	disp_helper_set_option(DISP_OPT_SHARE_WDMA0, 0);
 	disp_helper_set_option(DISP_OPT_ROUND_CORNER, 1);
-	disp_helper_set_option(DISP_OPT_ROUND_CORNER_MODE, DISP_HELPER_HW_RC);
+	disp_helper_set_option(DISP_OPT_ROUND_CORNER_MODE, 1);
 	disp_helper_set_option(DISP_OPT_FRAME_QUEUE, 0);
 	disp_helper_set_option(DISP_OPT_DC_BY_HRT, 0);
 	disp_helper_set_option(DISP_OPT_OVL_WCG, 1);
 	/* OVL SBCH */
-	disp_helper_set_option(DISP_OPT_OVL_SBCH, 1);
+	disp_helper_set_option(DISP_OPT_OVL_SBCH, 0);
 	disp_helper_set_option(DISP_OPT_MMPATH, 0);
 	disp_helper_set_option(DISP_OPT_TUI_MODE, 0);
-	disp_helper_set_option(DISP_OPT_LCM_HBM, 0);
 	/*DynFPS*/
-	disp_helper_set_option(DISP_OPT_DYNAMIC_FPS, 1);
+	disp_helper_set_option(DISP_OPT_DYNAMIC_FPS, 0);
+	disp_helper_set_option(DISP_OPT_LCM_HBM, 1);
 }
 
 int disp_helper_get_option_list(char *stringbuf, int buf_len)

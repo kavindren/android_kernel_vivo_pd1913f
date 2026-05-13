@@ -344,6 +344,7 @@ struct disp_frame_cfg_t {
 
 	/* for panel HBM (High Backlight Mode) control */
 	bool hbm_en;
+	int is_hbm;
 
 	/*DynFPS*/
 	int active_config;

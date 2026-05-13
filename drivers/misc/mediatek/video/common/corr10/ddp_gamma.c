@@ -60,9 +60,9 @@
 int corr_dbg_en;
 int ccorr_scenario;
 /* for MT6785 bypass color  */
-#if defined(CONFIG_MACH_MT6785)
-static bool bypass_color;
-#endif
+//#if defined(CONFIG_MACH_MT6785)
+//static bool bypass_color;
+//#endif
 #define GAMMA_ERR(fmt, arg...) \
 	pr_notice("[GAMMA] %s: " fmt "\n", __func__, ##arg)
 #define GAMMA_NOTICE(fmt, arg...) \
@@ -1036,7 +1036,7 @@ int disp_ccorr_set_color_matrix(void *cmdq, int32_t matrix[16],
 		}
 	}
 
-// hint: 0: identity matrix; 1: arbitraty matrix
+/*// hint: 0: identity matrix; 1: arbitraty matrix
 // fte_flag: true: gpu overlay && hwc not identity matrix
 // arbitraty matrix maybe identity matrix or color transform matrix;
 // only when set identity matrix and not gpu overlay, open display color
@@ -1045,17 +1045,18 @@ int disp_ccorr_set_color_matrix(void *cmdq, int32_t matrix[16],
 
 	if (((hint == 0) || ((hint == 1) && identity_matrix)) && (!fte_flag)) {
 		if (bypass_color == true) {
-			mtk_color_setbypass(DISP_MODULE_COLOR0, false, cmdq);
+			mtk_color_setbypass(DISP_MODULE_COLOR0, false);
 			bypass_color = false;
 		}
 	} else {
 		if (bypass_color == false) {
-			mtk_color_setbypass(DISP_MODULE_COLOR0, true, cmdq);
+			mtk_color_setbypass(DISP_MODULE_COLOR0, true);
 			bypass_color = true;
 		}
 	}
-
+*/
 	g_disp_ccorr_without_gamma = ccorr_without_gamma;
+
 
 	disp_ccorr_write_coef_reg(cmdq, CCORR0_MODULE_NAMING, 0, 0);
 
@@ -1096,7 +1097,10 @@ int disp_ccorr_set_color_matrix(void *cmdq, int32_t matrix[16], int32_t hint)
 	int i, j;
 	int ccorr_without_gamma = 0;
 	bool need_refresh = false;
-
+#if defined(CONFIG_MACH_MT6768)
+	unsigned int displayWidth = 0;
+	unsigned int displayHeight = 0;
+#endif
 	if (cmdq == NULL) {
 		CCORR_ERR("cmdq can not be NULL\n");
 		return -EFAULT;
@@ -1121,7 +1125,14 @@ int disp_ccorr_set_color_matrix(void *cmdq, int32_t matrix[16], int32_t hint)
 	}
 
 	g_disp_ccorr_without_gamma = ccorr_without_gamma;
-
+#if defined(CONFIG_MACH_MT6768)
+  	displayWidth = primary_display_get_width();
+	displayHeight = primary_display_get_height();
+	if (displayWidth == 1080 && displayHeight == 2408) {
+		if ((matrix[12] == 0) && (matrix[13] == 0) && (matrix[14] == 0))
+			g_disp_ccorr_without_gamma = 0;
+	}
+#endif
 	disp_ccorr_write_coef_reg(cmdq, CCORR0_MODULE_NAMING, 0, 0);
 
 	for (i = 0; i < 3; i++) {

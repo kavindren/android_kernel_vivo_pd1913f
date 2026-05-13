@@ -95,7 +95,7 @@ static const struct timeval FRAME_INTERVAL = { 0, 30000 };	/* 33ms */
 static bool no_update;
 static struct disp_session_input_config session_input;
 long dts_gpio_state;
-
+DEFINE_MUTEX(fb_pow_mod_lock);
 
 /* macro definiton */
 #define ALIGN_TO(x, n)  (((x) + ((n) - 1)) & ~((n) - 1))
@@ -170,6 +170,9 @@ unsigned int need_esd_check;
 unsigned int lcd_fps = 6000;
 wait_queue_head_t screen_update_wq;
 char mtkfb_lcm_name[256] = { 0 };
+#ifndef CONFIG_LCM_PANEL_TYPE_TFT
+char project_name[256] = { 0 };
+#endif
 #if defined(CONFIG_MTK_DUAL_DISPLAY_SUPPORT) && \
 	(CONFIG_MTK_DUAL_DISPLAY_SUPPORT == 2)
 struct fb_info *ext_mtkfb_fb;
@@ -178,6 +181,8 @@ unsigned long ext_fb_pa;
 unsigned int ext_lcd_fps = 6000;
 char ext_mtkfb_lcm_name[256] = { 0 };
 #endif
+unsigned int phone_shutdown_state;  /*0: no shutdown, 1: shutdown*/
+extern int mdss_dsi_panel_reset_and_powerctl(int enable);
 
 DEFINE_SEMAPHORE(sem_flipping);
 DEFINE_SEMAPHORE(sem_early_suspend);
@@ -229,6 +234,7 @@ static int mtkfb_release(struct fb_info *info, int user)
 	NOT_REFERENCED(info);
 	NOT_REFERENCED(user);
 	DISPFUNC();
+
 	MSG_FUNC_ENTER();
 	MSG_FUNC_LEAVE();
 	return 0;
@@ -278,10 +284,12 @@ static int mtkfb_blank(int blank_mode, struct fb_info *info)
 			break;
 		}
 
+		mutex_lock(&fb_pow_mod_lock);
 		primary_display_set_power_mode(FB_RESUME);
 		mtkfb_late_resume();
 
 		debug_print_power_mode_check(prev_pm, FB_RESUME);
+		mutex_unlock(&fb_pow_mod_lock);
 		break;
 	case FB_BLANK_VSYNC_SUSPEND:
 	case FB_BLANK_HSYNC_SUSPEND:
@@ -294,15 +302,23 @@ static int mtkfb_blank(int blank_mode, struct fb_info *info)
 			break;
 		}
 
+		mutex_lock(&fb_pow_mod_lock);
+		if (primary_display_is_sleepd() &&
+			primary_display_get_lcm_power_state() == LCM_ON_LOW_POWER) {
+			primary_display_set_power_mode(FB_RESUME);
+			primary_display_resume();
+			debug_print_power_mode_check(prev_pm, FB_RESUME);
+		}
 		primary_display_set_power_mode(FB_SUSPEND);
 		mtkfb_early_suspend();
 
 		debug_print_power_mode_check(prev_pm, FB_SUSPEND);
-
+		mutex_unlock(&fb_pow_mod_lock);
 		break;
 	default:
 		return -EINVAL;
 	}
+
 	return 0;
 }
 
@@ -1022,7 +1038,7 @@ int mtkfb_aod_mode_switch(enum mtkfb_aod_power_mode aod_pm)
 	enum mtkfb_power_mode prev_pm = primary_display_get_power_mode();
 
 	DISPCHECK("AOD: ioctl: %s\n",
-		(aod_pm != 0) ? "AOD_DOZE_SUSPEND" : "AOD_DOZE");
+		aod_pm ? "AOD_DOZE_SUSPEND" : "AOD_DOZE");
 	if (!primary_is_aod_supported()) {
 		DISPCHECK("AOD: feature not support\n");
 		return ret;
@@ -1033,6 +1049,7 @@ int mtkfb_aod_mode_switch(enum mtkfb_aod_power_mode aod_pm)
 		 * First DOZE to power on dispsys and LCM(low power mode);
 		 * then DOZE_SUSPEND to power off dispsys.
 		 */
+		mutex_lock(&fb_pow_mod_lock);
 		if (primary_display_is_sleepd() &&
 			primary_display_get_lcm_power_state()) {
 			primary_display_set_power_mode(DOZE);
@@ -1045,18 +1062,20 @@ int mtkfb_aod_mode_switch(enum mtkfb_aod_power_mode aod_pm)
 		ret = primary_display_suspend();
 
 		debug_print_power_mode_check(prev_pm, DOZE_SUSPEND);
+		mutex_unlock(&fb_pow_mod_lock);
 	} else if (aod_pm == MTKFB_AOD_DOZE) {
+		mutex_lock(&fb_pow_mod_lock);
 		primary_display_set_power_mode(DOZE);
 		ret = primary_display_resume();
 
 		debug_print_power_mode_check(prev_pm, DOZE);
+		mutex_unlock(&fb_pow_mod_lock);
 	} else {
 		DISPERR("AOD: error: unknown AOD power mode %d\n", aod_pm);
 	}
 	if (ret < 0)
 		DISPERR("AOD: set %s failed\n",
-			(aod_pm != MTKFB_AOD_DOZE) ? "AOD_SUSPEND"
-			: "AOD_RESUME");
+			aod_pm ? "AOD_SUSPEND" : "AOD_RESUME");
 	return ret;
 }
 
@@ -2152,11 +2171,17 @@ int _mtkfb_internal_test(unsigned long va, unsigned int w, unsigned int h)
 
 #ifdef CONFIG_OF
 struct tag_video_lfb {
-	u64 fb_base;
-	u32 islcmfound;
-	u32 fps;
-	u32 vram;
-	char lcmname[1];	/* this is the minimum size */
+    u64 fb_base;
+    u32 islcmfound;
+    u32 fps;
+    u32 vram;
+    u32 lcm_software_id;
+    u32 lcm_especial_id;
+    u32 silent_reboot;  /* add for silent reboot */
+    u32 lcm_ldo_vision;
+    u32 lcm_imei_str[4] ;
+    u32 bl_hw_version;
+    char lcmname[1];    /* this is the minimum size */
 };
 #if defined(CONFIG_MTK_DUAL_DISPLAY_SUPPORT) && \
 	(CONFIG_MTK_DUAL_DISPLAY_SUPPORT == 2)
@@ -2182,12 +2207,19 @@ unsigned int ext_vramsize;
 phys_addr_t ext_fb_base;
 #endif
 
+unsigned int lcm_software_id = 0xff;
+unsigned int lcm_especial_id;
+unsigned int silent_reboot;
+unsigned int silent_backlight;
+unsigned int lcm_ldo_vision;
+unsigned int lcm_imei_str[4];
+unsigned int bl_hw_version = 0;
+
 static int __parse_tag_videolfb_extra(struct device_node *node)
 {
 	void *prop;
 	unsigned long size = 0;
 	u32 fb_base_h, fb_base_l;
-
 	prop = (void *)of_get_property(node,
 		"atag,videolfb-fb_base_h", NULL);
 	if (!prop)
@@ -2255,7 +2287,19 @@ static int __parse_tag_videolfb(struct device_node *node)
 {
 	struct tag_video_lfb *videolfb_tag = NULL;
 	unsigned long size = 0;
-
+#ifndef CONFIG_LCM_PANEL_TYPE_TFT
+	void *prop;
+	prop = (void *)of_get_property(node,
+		"atag,videolfb-project-name", (int *)&size);
+	if (!prop)
+		LCM_ERR("[DT][videolfb] project_name parse failed\n");
+	else {
+		strncpy((char *)project_name, prop, sizeof(project_name));
+		project_name[size] = '\0';
+		LCM_INFO("[DT][videolfb] project_name    = %s\n",
+			project_name);
+	}
+#endif
 	videolfb_tag = (struct tag_video_lfb *)of_get_property(node,
 		"atag,videolfb", (int *)&size);
 	if (videolfb_tag) {
@@ -2263,7 +2307,27 @@ static int __parse_tag_videolfb(struct device_node *node)
 		strncpy((char *)mtkfb_lcm_name, videolfb_tag->lcmname,
 			sizeof(mtkfb_lcm_name));
 		mtkfb_lcm_name[strlen(videolfb_tag->lcmname)] = '\0';
-
+#ifndef CONFIG_LCM_PANEL_TYPE_TFT
+        LCD_INFO("[DT][videolfb] mtkfb lcm name orignal find %s\n", mtkfb_lcm_name);
+        if (!strcmp(project_name, "PD1913")) {
+                if (!strcmp(mtkfb_lcm_name, "pd1913_sofeg04_fhdplus_dsi_cmd_samsung"))
+                        LCD_INFO("[DT][videolfb] mtkfb lcm name match succeed\n");
+                else {
+                        memset((void *)mtkfb_lcm_name, 0, sizeof(mtkfb_lcm_name));
+                        lcm_software_id = videolfb_tag->lcm_software_id;
+                        if ((lcm_software_id == 0x6b) || (lcm_software_id == 0x6f) || (lcm_software_id == 0x76)) {
+                                strncpy((char *)mtkfb_lcm_name, "pd1913_sofeg04_fhdplus_dsi_cmd_samsung",
+                                sizeof("pd1913_sofeg04_fhdplus_dsi_cmd_samsung"));
+                                mtkfb_lcm_name[strlen("pd1913_sofeg04_fhdplus_dsi_cmd_samsung")] = '\0';
+                        } else {
+                                strncpy((char *)mtkfb_lcm_name, "pd1913_sofeg04_fhdplus_dsi_cmd_samsung",
+                                        sizeof("pd1913_sofeg04_fhdplus_dsi_cmd_samsung"));
+                                mtkfb_lcm_name[strlen("pd1913_sofeg04_fhdplus_dsi_cmd_samsung")] = '\0';
+                        }
+                        LCM_ERR("[DT][videolfb] mtkfb lcm name mismatch ,we used default lcm drver %s, id = 0x%x\n", mtkfb_lcm_name, lcm_software_id);
+                }
+        }
+#endif
 		lcd_fps = videolfb_tag->fps;
 		if (lcd_fps == 0)
 			lcd_fps = 6000;
@@ -2271,6 +2335,16 @@ static int __parse_tag_videolfb(struct device_node *node)
 		islcmconnected = videolfb_tag->islcmfound;
 		vramsize = videolfb_tag->vram;
 		fb_base = videolfb_tag->fb_base;
+		lcm_software_id = videolfb_tag->lcm_software_id;
+		lcm_especial_id = videolfb_tag->lcm_especial_id;
+		silent_reboot = videolfb_tag->silent_reboot;
+		silent_backlight = videolfb_tag->silent_reboot;
+		lcm_ldo_vision = videolfb_tag->lcm_ldo_vision;
+		lcm_imei_str[0] =  videolfb_tag->lcm_imei_str[0];
+		lcm_imei_str[1] =  videolfb_tag->lcm_imei_str[1];
+		lcm_imei_str[2] =  videolfb_tag->lcm_imei_str[2];
+		lcm_imei_str[3] =  videolfb_tag->lcm_imei_str[3];
+		bl_hw_version =  videolfb_tag->bl_hw_version;
 		is_lcm_inited = 1;
 
 		return 0;
@@ -2358,9 +2432,13 @@ found:
 		(unsigned long)fb_base);
 	DISPCHECK("[DT][videolfb] vram       = 0x%x (%d)\n",
 		vramsize, vramsize);
-	DISPCHECK("[DT][videolfb] lcmname    = %s\n",
-		mtkfb_lcm_name);
-
+	DISPCHECK("[DT][videolfb] lcmname    = %s\n", mtkfb_lcm_name);
+	DISPCHECK("[DT][videolfb] lcm_software_id       = %d\n", lcm_software_id);
+	DISPCHECK("[DT][videolfb] lcm_especial_id       = %d\n", lcm_especial_id);
+	DISPCHECK("[DT][videolfb] silent_reboot       = %d\n", silent_reboot);
+	DISPCHECK("[DT][videolfb] lcm_ldo_vision		 = 0x%x\n",
+		lcm_ldo_vision);
+	DISPERR("[DT][videolfb] lcm_imei       = %x  %x  %x  %x\n", lcm_imei_str[0], lcm_imei_str[1], lcm_imei_str[2], lcm_imei_str[3]);
 #if defined(CONFIG_MTK_DUAL_DISPLAY_SUPPORT) && \
 	(CONFIG_MTK_DUAL_DISPLAY_SUPPORT == 2)
 	DISPCHECK("[DT][videolfb] ext_islcmfound = %d\n",
@@ -2563,6 +2641,7 @@ static int mtkfb_probe(struct platform_device *pdev)
 	primary_display_set_frame_buffer_address(
 		(unsigned long)(fbdev->fb_va_base), fb_pa, fb_base);
 	primary_display_init(mtkfb_find_lcm_driver(), lcd_fps, is_lcm_inited);
+
 	init_state++;		/* 1 */
 	MTK_FB_XRES = DISP_GetScreenWidth();
 	MTK_FB_YRES = DISP_GetScreenHeight();
@@ -2651,11 +2730,8 @@ static int mtkfb_probe(struct platform_device *pdev)
 
 	fbdev->state = MTKFB_ACTIVE;
 
-	if (!strcmp(mtkfb_find_lcm_driver(),
-		"nt35521_hd_dsi_vdo_truly_rt5081_drv")) {
-		register_ccci_sys_call_back(MD_SYS1,
-			MD_DISPLAY_DYNAMIC_MIPI, mipi_clk_change);
-	}
+	register_ccci_sys_call_back(MD_SYS1,
+		MD_DISPLAY_DYNAMIC_MIPI, mipi_clk_change);
 
 	MSG_FUNC_LEAVE();
 	pr_info("disp driver(2) %s end\n", __func__);
@@ -2708,15 +2784,32 @@ static int mtkfb_resume(struct platform_device *pdev)
 	return 0;
 }
 
+extern int mdss_dsi_panel_reset_and_powerctl(int enable);
 static void mtkfb_shutdown(struct platform_device *pdev)
 {
 	MTKFB_LOG("[FB Driver] %s()\n", __func__);
+#ifndef CONFIG_LCM_PANEL_TYPE_TFT
+	/* mt65xx_leds_brightness_set(MT65XX_LED_TYPE_LCD, LED_OFF); */
+	if (!lcd_fps)
+		msleep(30);
+	else
+		msleep(2 * 100000 / lcd_fps);	/* Delay 2 frames. */
+#endif
+	mdss_dsi_panel_reset_and_powerctl(0); //avdd avee need to power down when phone is shutdown
+	phone_shutdown_state = 1;
 	if (primary_display_is_sleepd()) {
+		if (!strcmp(mtkfb_lcm_name, "pd2066_ili9882n_fhdplus_dsi_vdo_tm") ||
+			!strcmp(mtkfb_lcm_name, "pd2066_nt36525b_fhdplus_dsi_vdo_inx") ||
+			!strcmp(mtkfb_lcm_name, "pd2143_nt36525b_fhdplus_dsi_vdo_boe")) {
+			mdss_dsi_panel_reset_and_powerctl(0);
+		}
 		MTKFB_LOG("mtkfb has been power off\n");
 		return;
 	}
+	mutex_lock(&fb_pow_mod_lock);
 	primary_display_set_power_mode(FB_SUSPEND);
 	primary_display_suspend();
+	mutex_unlock(&fb_pow_mod_lock);
 	MTKFB_LOG("[FB Driver] leave %s\n", __func__);
 }
 
@@ -2791,6 +2884,7 @@ static void mtkfb_late_resume(void)
 	DISPMSG("[FB Driver] enter late_resume\n");
 
 	ret = primary_display_resume();
+
 	if (ret) {
 		DISPERR("primary display resume failed\n");
 		return;

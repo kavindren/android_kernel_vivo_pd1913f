@@ -44,6 +44,7 @@ struct DDP_MMP_Events {
 	mmp_event POSTMASK_IRQ;
 	mmp_event primary_Parent;
 	mmp_event primary_display_switch_dst_mode;
+	mmp_event primary_display_switch_aod_mode;
 	mmp_event primary_trigger;
 	mmp_event primary_suspend;
 	mmp_event primary_resume;
@@ -152,7 +153,6 @@ struct DDP_MMP_Events {
 	mmp_event primary_chg_fps_wait;
 	mmp_event primary_chg_fps_req;
 	mmp_event primary_chg_fps_notify;
-	mmp_event primary_dynfps_chg_fps;
 };
 
 struct DDP_MMP_Events *ddp_mmp_get_events(void);

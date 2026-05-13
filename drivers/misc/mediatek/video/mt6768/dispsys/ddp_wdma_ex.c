@@ -23,11 +23,8 @@
 #include "primary_display.h"
 #include "ddp_m4u.h"
 #include "ddp_mmp.h"
-#include <ion.h>
-#include <ion_sec_heap.h>
 
 #define ALIGN_TO(x, n)	(((x) + ((n) - 1)) & ~((n) - 1))
-enum TRUSTED_MEM_REQ_TYPE mem_type;
 
 /*****************************************************************************/
 unsigned int wdma_index(enum DISP_MODULE_ENUM module)
@@ -185,37 +182,15 @@ static int wdma_config_yuv420(enum DISP_MODULE_ENUM module,
 
 		m4u_port = DISP_M4U_PORT_DISP_WDMA0;
 
-		DDPDBG("[SVP]output module: %d,  type:%d, handle as:%d,\n",
-			module, mem_type, DISP_M4U_PORT_DISP_WDMA0);
-
-		if (mem_type != -1) {
-			cmdqRecWriteSecureMetaData(handle,
-				disp_addr_convert(idx_offst + DISP_REG_WDMA_DST_ADDR1),
-				CMDQ_SAM_H_2_MVA, dstAddress, u_off, u_size,
-				m4u_port, mem_type);
-		} else {
+		cmdqRecWriteSecure(handle,
+			disp_addr_convert(idx_offst + DISP_REG_WDMA_DST_ADDR1),
+			CMDQ_SAM_H_2_MVA, dstAddress, u_off, u_size, m4u_port);
+		if (has_v)
 			cmdqRecWriteSecure(handle,
-				disp_addr_convert(idx_offst + DISP_REG_WDMA_DST_ADDR1),
-				CMDQ_SAM_H_2_MVA, dstAddress, u_off, u_size,
-				m4u_port);
-		}
-
-		if (has_v) {
-			DDPDBG("[SVP]output module: %d,  type:%d, handle as:%d,\n",
-				module, mem_type, DISP_M4U_PORT_DISP_WDMA0);
-
-			if (mem_type != -1) {
-				cmdqRecWriteSecureMetaData(handle,
-					disp_addr_convert(idx_offst + DISP_REG_WDMA_DST_ADDR2),
-					CMDQ_SAM_H_2_MVA, dstAddress, v_off, u_size,
-					m4u_port, mem_type);
-			} else {
-				cmdqRecWriteSecure(handle,
-					disp_addr_convert(idx_offst + DISP_REG_WDMA_DST_ADDR2),
-					CMDQ_SAM_H_2_MVA, dstAddress, v_off, u_size,
-					m4u_port);
-			}
-		}
+				disp_addr_convert(idx_offst +
+					DISP_REG_WDMA_DST_ADDR2),
+				CMDQ_SAM_H_2_MVA, dstAddress,
+				v_off, u_size, m4u_port);
 	}
 	DISP_REG_SET_FIELD(handle, DST_W_IN_BYTE_FLD_DST_W_IN_BYTE,
 		idx_offst + DISP_REG_WDMA_DST_UV_PITCH, u_stride);
@@ -288,20 +263,9 @@ static int wdma_config(enum DISP_MODULE_ENUM module, unsigned int srcWidth,
 		 * we need to pass this handle and offset to cmdq driver
 		 * cmdq sec driver will convert handle to correct address
 		 */
-		DDPDBG("[SVP]output module: %d,  type:%d, handle as:%d,\n",
-			module, mem_type, DISP_M4U_PORT_DISP_WDMA0);
-
-		if (mem_type != -1) {
-			cmdqRecWriteSecureMetaData(handle,
-				disp_addr_convert(idx_offst + DISP_REG_WDMA_DST_ADDR0),
-				CMDQ_SAM_H_2_MVA, dstAddress, 0, size,
-				m4u_port, mem_type);
-		} else {
-			cmdqRecWriteSecure(handle,
-				disp_addr_convert(idx_offst + DISP_REG_WDMA_DST_ADDR0),
-				CMDQ_SAM_H_2_MVA, dstAddress, 0, size,
-				m4u_port);
-		}
+		cmdqRecWriteSecure(handle,
+			disp_addr_convert(idx_offst + DISP_REG_WDMA_DST_ADDR0),
+			CMDQ_SAM_H_2_MVA, dstAddress, 0, size, m4u_port);
 	}
 	DISP_REG_SET(handle,
 		idx_offst + DISP_REG_WDMA_DST_W_IN_BYTE, dstPitch);
@@ -709,19 +673,12 @@ wdma_golden_setting(enum DISP_MODULE_ENUM module,
 		res = p_golden_setting->dst_width *
 			p_golden_setting->dst_height;
 	} else {
-#ifdef CONFIG_MTK_DX_HDCP_DDP_SUPPORT
-		res = 1920 * 1080;
-		frame_rate = 60;
-#else
 		res = p_golden_setting->ext_dst_width *
 				p_golden_setting->ext_dst_height;
 		if ((p_golden_setting->ext_dst_width == 3840 &&
 			p_golden_setting->ext_dst_height == 2160))
 			frame_rate = 30;
-#endif
 	}
-
-	DDPMSG("%s, frame_rate=%u\n", __func__, frame_rate);
 
 	/* DISP_REG_WDMA_SMI_CON */
 	regval = 0;
@@ -1246,28 +1203,12 @@ static int wdma_config_l(enum DISP_MODULE_ENUM module,
 {
 
 	struct WDMA_CONFIG_STRUCT *config = &pConfig->wdma_config;
-#ifdef CONFIG_MTK_DX_HDCP_DDP_SUPPORT
-	unsigned int is_primary_flag = 0; /*primary or external*/
-#else
 	unsigned int is_primary_flag = 1; /*primary or external*/
-#endif
 	unsigned int bwBpp;
 	unsigned long long wdma_bw;
 
 	if (!pConfig->wdma_dirty)
 		return 0;
-
-	if (config->hnd != NULL) {
-		int sec = -1;
-		int sec_id = -1;
-		ion_phys_addr_t sec_hdl = -1;
-
-		mem_type = ion_hdl2sec_type(config->hnd, &sec, &sec_id, &sec_hdl);
-		DDPERR("[SVP]begin output setting sec id as: %d, type:%d\n",
-			sec_id, mem_type);
-	} else {
-		mem_type = -1;
-	}
 
 	setup_wdma_sec(module, pConfig, handle);
 	if (wdma_check_input_param(config) == 0) {

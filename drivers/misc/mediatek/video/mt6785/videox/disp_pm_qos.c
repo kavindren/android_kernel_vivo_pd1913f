@@ -141,8 +141,9 @@ void disp_pm_qos_init(void)
 			   PM_QOS_DDR_OPP_DEFAULT_VALUE);
 	pm_qos_add_request(&mm_freq_request, PM_QOS_DISP_FREQ,
 			   PM_QOS_MM_FREQ_DEFAULT_VALUE);
-	pm_qos_add_request(&vcore_request, PM_QOS_VCORE_OPP,  //add for mipi clk 1.7GHz //
-				VCORE_OPP_1);
+	//pm_qos_add_request(&vcore_request, PM_QOS_VCORE_OPP,  //add for mipi clk 1.7GHz
+	//		   VCORE_OPP_1);
+
 	plist_head_init(&hrt_request_list);
 
 	mm_qos_add_request(&hrt_request_list, &ovl0_hrt_request,
@@ -170,7 +171,7 @@ void disp_pm_qos_deinit(void)
 	mm_qos_remove_all_request(&bw_request_list);
 	pm_qos_remove_request(&ddr_opp_request);
 	pm_qos_remove_request(&mm_freq_request);
-	pm_qos_remove_request(&vcore_request);
+	//pm_qos_remove_request(&vcore_request);
 #endif
 }
 
@@ -313,31 +314,6 @@ int disp_pm_qos_update_hrt(unsigned long long bandwidth)
 unsigned int get_has_hrt_bw(void)
 {
 	return has_hrt_bw;
-}
-int disp_pm_qos_update_mmclk(int mm_freq)
-{
-	enum vcore_opp vcore_value = VCORE_OPP_0;
-
-#if 0
-	mmprofile_log_ex(ddp_mmp_get_events()->primary_pm_qos,
-					MMPROFILE_FLAG_START,
-					!primary_display_is_decouple_mode(), vcore_value);
-#endif
-#ifdef MTK_FB_MMDVFS_SUPPORT
-	if (mm_freq < 559)
-		vcore_value = VCORE_OPP_1;
-	DISPMSG("%s, force set mmclk=%d, vcore=%s\n",
-		__func__, mm_freq, vcore_value == VCORE_OPP_0 ? "0.825v" : "0.725v");
-	pm_qos_update_request(&mm_freq_request, mm_freq);
-	pm_qos_update_request(&vcore_request, vcore_value);
-#endif
-#if 0
-	   mmprofile_log_ex(ddp_mmp_get_events()->primary_pm_qos,
-					MMPROFILE_FLAG_END,
-					!primary_display_is_decouple_mode(), 0);
-#endif
-
-	return 0;
 }
 
 int prim_disp_request_hrt_bw(int overlap_num,
@@ -587,3 +563,19 @@ int disp_pm_qos_set_rdma_bw(unsigned long long out_fps,
 	return ret;
 }
 
+int disp_pm_qos_update_vcore(void)
+{
+	enum vcore_opp vcore_value = VCORE_OPP_1;
+
+	mmprofile_log_ex(ddp_mmp_get_events()->primary_pm_qos,
+			MMPROFILE_FLAG_START,
+			!primary_display_is_decouple_mode(), vcore_value);
+#ifdef MTK_FB_MMDVFS_SUPPORT
+	pm_qos_update_request(&vcore_request, vcore_value);
+#endif
+	mmprofile_log_ex(ddp_mmp_get_events()->primary_pm_qos,
+			MMPROFILE_FLAG_END,
+			!primary_display_is_decouple_mode(), 0);
+
+	return 0;
+}

@@ -90,7 +90,7 @@
 #include "mtk_vcorefs_manager.h"
 #endif /* MTK_FB_MMDVFS_SUPPORT */
 #include "disp_pm_qos.h"
-
+#include "helio-dvfsrc-opp-mt6785.h"
 
 #include "disp_lowpower.h"
 #include "disp_recovery.h"
@@ -106,10 +106,6 @@
 #include "mtk_ovl.h"
 #include "ddp_ovl_wcg.h"
 #include "disp_tphint.h"
-
-#ifdef CONFIG_MTK_MT6382_BDG
-#include "ddp_disp_bdg.h"
-#endif
 
 /*if GPU use fb heap for compress buffer need turn on this marco*/
 /*#define ENLARGE_FB_FOR_COMPRESS*/
@@ -127,6 +123,7 @@ static UINT32 afbc_frame_buf_size;
 #define _DEBUG_DITHER_HANG_
 
 #define FRM_UPDATE_SEQ_CACHE_NUM (DISP_INTERNAL_BUFFER_COUNT+1)
+#define PANEL_TX_MAX_BUF 256
 #if 0
 static struct disp_internal_buffer_info
 	*decouple_buffer_info[DISP_INTERNAL_BUFFER_COUNT];
@@ -134,7 +131,6 @@ static struct disp_internal_buffer_info
 static struct RDMA_CONFIG_STRUCT decouple_rdma_config;
 static struct WDMA_CONFIG_STRUCT decouple_wdma_config;
 static struct disp_mem_output_config mem_config;
-static unsigned int primary_display_set_sess_mode;
 atomic_t hwc_configing = ATOMIC_INIT(0);
 static unsigned int primary_session_id =
 	MAKE_DISP_SESSION(DISP_SESSION_PRIMARY, 0);
@@ -151,6 +147,10 @@ static struct switch_dev disp_switch_data;
 static int osc_last_stat;
 static bool has_rsz_input;
 static bool has_yuv_input;
+
+/***********add by lcm driver***********************/
+extern unsigned int bl_brightness_hal;
+/***********add by lcm driver end***********************/
 
 #if 0
 /* global variable for idle manager */
@@ -178,6 +178,52 @@ static struct task_struct *init_decouple_buffer_thread;
 
 static int decouple_mirror_update_rdma_config_thread(void *data);
 static int decouple_trigger_worker_thread(void *data);
+
+/***********add by lcm driver***********************/
+#define MDSS_MAX_PANEL_LEN      256
+#define NEXT_VALUE_OFFSET 3
+static int disp_creat_sys_file(void);
+
+extern unsigned int lcm_software_id;
+int lcm_acl_status;
+int oled_dimming_enable;
+int oled_weakup_hbmon;
+extern unsigned int silent_reboot;
+extern unsigned int bl_brightness_hal;
+atomic_t oled_hbm_status =  ATOMIC_INIT(HBM_UDFP_RESUME_MODE_OFF);
+atomic_t doze_mode_state =  ATOMIC_INIT(LCM_PANEL_ON);
+int oled_alpm_state;
+int oled_hlpm_state;
+int vivo_sre_enable;
+int vivo_ess_enable;
+int vivo_ess_level;
+extern unsigned int current_backlight;
+extern char project_name[256];
+extern unsigned int lcm_software_id;
+extern atomic_t after_shooter_count;
+extern int fingershooter_status;
+extern int notify_udfp_cyan_jiffies;
+struct mutex hbm_lock;
+int uevent_shooter_flag;
+int oled_ud_flag;
+bool set_hbm_on_aod_exit;
+int lcmpr_debug_enabled;
+
+char reg[PANEL_TX_MAX_BUF] = {0x0};
+atomic_t aod_control = ATOMIC_INIT(0);
+atomic_t display_on_control = ATOMIC_INIT(0);
+//atomic_t aod_off = ATOMIC_INIT(0);
+atomic_t smart_aod_update = ATOMIC_INIT(0);
+int vivo_colour_gamut;
+static struct kobject disp_kobject;
+unsigned int mdss_report_lcm_id(void);
+int _set_vivo_MipiCmd_HS(unsigned char cmdtype, unsigned int levelsetting);
+#ifdef CONFIG_BBK_LCM_TEMPERATURE_COMPENSATION
+static void work_set_lcm_temperature_compensation(struct work_struct *work);
+static int elvss_temperature;
+static struct work_struct temperature_compensation_work;
+#endif
+/***********************************************************************/
 
 struct task_struct *primary_display_frame_update_task;
 wait_queue_head_t primary_display_frame_update_wq;
@@ -209,6 +255,8 @@ static int od_need_start;
 #ifdef MTK_FB_MMDVFS_SUPPORT
 static int dvfs_last_ovl_req = HRT_LEVEL_NUM - 1;
 #endif
+static struct pm_qos_request vcore_request;
+static bool RequestVcore;
 
 /* delayed trigger */
 static atomic_t delayed_trigger_kick = ATOMIC_INIT(0);
@@ -226,7 +274,13 @@ static int get_sw_round_corner_param(unsigned int *tp_mva, unsigned int *bt_mva,
 				phys_addr_t *tp_pa, phys_addr_t *bt_pa,
 				unsigned int *pitch, unsigned int *height);
 #endif
-
+#ifdef CONFIG_LCM_DRE_SUPPORT
+int vivo_dre_enable;
+extern void disp_aal_set_dre_en(int enable);
+#endif
+extern void disp_aal_set_ess_level(int level);
+extern void disp_aal_set_ess_en(int enable);
+extern int sde_notify_fingerprint_status(void);
 /* hold the wakelock to make kernel awake when primary display is on */
 /* Must manipulate wake lock through lock_primary_wake_lock() */
 struct wakeup_source pri_wk_lock;
@@ -487,6 +541,9 @@ static enum DISP_POWER_STATE primary_set_state(enum DISP_POWER_STATE new_state)
 	return old_state;
 }
 
+#define RAMLESS_AOD_PAYLOAD_SIZE	100
+unsigned char aod_area_cmd[RAMLESS_AOD_PAYLOAD_SIZE] = {0};
+
 /* AOD power mode API */
 enum mtkfb_power_mode
 primary_display_set_power_mode_nolock(enum mtkfb_power_mode new_mode)
@@ -532,8 +589,9 @@ enum mtkfb_power_mode primary_display_get_prev_power_mode_nolock(void)
 
 bool primary_is_aod_supported(void)
 {
-	if (disp_helper_get_option(DISP_OPT_AOD) &&
-	    !disp_lcm_is_video_mode(pgc->plcm))
+	if ((disp_helper_get_option(DISP_OPT_AOD) &&
+	    !disp_lcm_is_video_mode(pgc->plcm)) ||
+	    disp_helper_get_option(DISP_OPT_AOD_RAMLESS))
 		return 1;
 
 	return 0;
@@ -1164,10 +1222,10 @@ int lcm_fps_ctx_update(struct lcm_fps_ctx_t *fps_ctx, unsigned long long cur_ns)
 
 	if (!fps_ctx->is_inited)
 		lcm_fps_ctx_init(fps_ctx);
-
-
+	
 	if (cur_ns != 0 && !fps_ctx->dsi_mode)
 		last_te_time = cur_ns;
+
 	delta = cur_ns - fps_ctx->last_ns;
 	if (delta == 0 || fps_ctx->last_ns == 0) {
 		fps_ctx->last_ns = cur_ns;
@@ -1625,6 +1683,10 @@ static void _cmdq_build_trigger_loop(void)
 {
 	int ret = 0;
 	unsigned long dsi_vfp_addr[2] = {0, 0};
+	unsigned int i;
+	unsigned int doze_wait = 0;
+	enum mtkfb_power_mode cur_pm;
+	
 
 	if (primary_display_is_support_ARR()) {
 		int VFP_PORTCH = pgc->plcm->params->dsi.vertical_frontporch;
@@ -1743,10 +1805,22 @@ static void _cmdq_build_trigger_loop(void)
 		 * such as waiting for DSI TE
 		 */
 #ifndef CONFIG_FPGA_EARLY_PORTING /* fpga has no TE signal */
-		if (islcmconnected)
-			dpmgr_path_build_cmdq(pgc->dpmgr_handle,
+		if (islcmconnected) {
+			cur_pm = primary_display_get_power_mode_nolock();
+			if (disp_helper_get_option(DISP_OPT_AOD_RAMLESS) &&
+				(cur_pm == DOZE)) {
+				doze_wait = disp_lcm_get_doze_delay(pgc->plcm);
+				for (i = 0; i < doze_wait; i++) {
+					dpmgr_path_build_cmdq(pgc->dpmgr_handle,
+						 pgc->cmdq_handle_trigger,
+						 CMDQ_WAIT_LCM_TE, 0);
+				}
+			} else {
+				dpmgr_path_build_cmdq(pgc->dpmgr_handle,
 					      pgc->cmdq_handle_trigger,
 					      CMDQ_WAIT_LCM_TE, 0);
+			}
+		}
 #endif
 		ret = cmdqRecWaitNoClear(pgc->cmdq_handle_trigger,
 					 CMDQ_SYNC_TOKEN_CABC_EOF);
@@ -1838,7 +1912,7 @@ static void _cmdq_build_trigger_loop(void)
 	 * dump trigger loop instructions to check
 	 * whether dpmgr_path_build_cmdq works correctly
 	 */
-	DISPMSG("primary display BUILD cmdq trigger loop finished\n");
+	DISPDBG("primary display BUILD cmdq trigger loop finished\n");
 }
 
 void _cmdq_start_trigger_loop(void)
@@ -3706,8 +3780,10 @@ static int _ovl_fence_release_callback(unsigned long userdata)
 #ifdef CONFIG_MTK_HIGH_FRAME_RATE
 	unsigned int _vsyncFPS = 6000;/*real fps * 100*/
 #endif
+	int ramless_aod_opt_sta = 0;
 
-
+	ramless_aod_opt_sta =
+		disp_helper_get_option(DISP_OPT_AOD_RAMLESS);
 	mmprofile_log_ex(ddp_mmp_get_events()->session_release,
 			 MMPROFILE_FLAG_START, 1, userdata);
 
@@ -3842,9 +3918,10 @@ static int _ovl_fence_release_callback(unsigned long userdata)
 
 		}
 	}
-
-	if (primary_display_is_video_mode())
+	if (primary_display_is_video_mode()|| (ramless_aod_opt_sta && primary_display_get_power_mode_nolock() == DOZE)){
 		primary_display_wakeup_pf_thread();
+	}
+
 	mmprofile_log_ex(ddp_mmp_get_events()->session_release,
 			 MMPROFILE_FLAG_END, 1, userdata);
 	return ret;
@@ -4002,7 +4079,6 @@ primary_display_frame_update_irq_callback(enum DISP_MODULE_ENUM module,
 {
 	/* if (pgc->session_mode == DISP_SESSION_DIRECT_LINK_MIRROR_MODE) */
 	/*     return; */
-
 	if (module == DISP_MODULE_RDMA0) {
 		if (param & 0x2) { /* rdma0 frame start 0x20 */
 			if (pgc->session_id > 0 &&
@@ -4206,15 +4282,6 @@ int primary_display_init(char *lcm_name, unsigned int lcm_fps,
 
 	dprec_init();
 	dpmgr_init();
-#ifdef CONFIG_MTK_MT6382_BDG
-	if (is_lcm_inited) {
-		disp_pm_qos_update_mmclk(559);
-		bdg_register_init();
-		set_mt6382_init(1);
-		set_deskew_status(1);
-	} else
-		set_mt6382_init(0);
-#endif
 #ifdef MTK_FB_MMDVFS_SUPPORT
 	disp_pm_qos_init();
 	dvfs_last_ovl_req = 0;
@@ -4257,7 +4324,7 @@ int primary_display_init(char *lcm_name, unsigned int lcm_fps,
 #ifdef CONFIG_MTK_HIGH_FRAME_RATE
 	mutex_init(&(pgc->dynfps_lock));
 #endif
-
+	mutex_init(&hbm_lock);
 	pgc->prev_pm = MTKFB_POWER_MODE_UNKNOWN;
 
 	opt = disp_helper_get_option(DISP_OPT_FPS_CALC_WND);
@@ -4289,6 +4356,13 @@ int primary_display_init(char *lcm_name, unsigned int lcm_fps,
 		DISP_PR_ERR("get lcm params FAILED\n");
 		ret = DISP_STATUS_ERROR;
 		goto done;
+	}
+
+	/*request vcore to 0.725 for 1.7GHZ MIPI CLK*/
+	if (lcm_param->dsi.PLL_CLOCK >= 840) {
+		pm_qos_add_request(&vcore_request, PM_QOS_VCORE_OPP,
+				VCORE_OPP_1);
+	RequestVcore = true;
 	}
 
 	/* update path dst module: for dual dsi */
@@ -4500,10 +4574,6 @@ lcm_corner_out:
 
 	data_config->fps = lcm_fps;
 	data_config->dst_dirty = 1;
-#ifdef CONFIG_MTK_MT6382_BDG
-	if (data_config->dispif_config.dsi.mode == CMD_MODE)
-		bdg_tx_init(DISP_BDG_DSI0, data_config, NULL);
-#endif
 	ret = dpmgr_path_config(pgc->dpmgr_handle, data_config,
 				pgc->cmdq_handle_config);
 
@@ -4535,7 +4605,12 @@ lcm_corner_out:
 	if (!ret)
 		primary_display_set_lcm_power_state_nolock(LCM_ON);
 
-	primary_display_cur_dst_mode = primary_display_is_video_mode();
+	if (disp_helper_get_option(DISP_OPT_AOD_RAMLESS)) {
+		primary_display_cur_dst_mode = pgc->plcm->params->dsi.mode;
+		primary_display_def_dst_mode = pgc->plcm->params->dsi.mode;
+	} else {
+		primary_display_cur_dst_mode = primary_display_is_video_mode();
+	}
 
 	DISPCHECK("%s: dpmgr_path_start\n", __func__);
 	/*
@@ -4631,8 +4706,14 @@ lcm_corner_out:
 	}
 
 	if (primary_display_is_video_mode()) {
-		if (disp_helper_get_option(DISP_OPT_SWITCH_DST_MODE))
-			primary_display_def_dst_mode = 1;
+		if (!disp_helper_get_option(DISP_OPT_AOD_RAMLESS) &&
+			disp_helper_get_option(DISP_OPT_SWITCH_DST_MODE)) {
+				/* video mode */
+				primary_display_cur_dst_mode = 1;
+				/* default mode is video mode */
+				primary_display_def_dst_mode = 1;
+		}
+
 		if (_need_lfr_check()) {
 			dpmgr_map_event_to_irq(pgc->dpmgr_handle,
 					       DISP_PATH_EVENT_IF_VSYNC,
@@ -4681,6 +4762,10 @@ done:
 
 	layering_rule_init();
 	_primary_path_unlock(__func__);
+	disp_creat_sys_file();
+
+	if (!strcmp(project_name, "PD2078F_EX"))
+		vivo_sre_enable = 2;
 	return ret;
 }
 
@@ -4943,6 +5028,10 @@ int primary_display_deinit(void)
 	_primary_path_unlock(__func__);
 #ifdef MTK_FB_MMDVFS_SUPPORT
 	disp_pm_qos_deinit();
+
+	if (RequestVcore)
+		pm_qos_remove_request(&vcore_request);
+
 #endif
 	return 0;
 }
@@ -5009,7 +5098,9 @@ int primary_display_wait_for_vsync(void *config)
 				(struct disp_session_vsync_config *)config;
 	int ret = 0, has_vsync = 1;
 	unsigned long long ts = 0ULL;
-
+	unsigned int doze_wait = 0;
+	unsigned int i = 0;
+	
 	/*
 	 * kick idle manager here to ensure SODI is disabled
 	 * when screen update begin(not 100% ensure)
@@ -5024,8 +5115,8 @@ int primary_display_wait_for_vsync(void *config)
 	if (!islcmconnected || !has_vsync) {
 		DISPCHECK("use fake vsync: lcm_connect=%d, has_vsync=%d\n",
 			  islcmconnected, has_vsync);
-//		msleep(20);
-//		return 0;
+		msleep(20);
+		return 0;
 	}
 
 	if (pgc->force_fps_keep_count && pgc->force_fps_skip_count) {
@@ -5056,8 +5147,18 @@ int primary_display_wait_for_vsync(void *config)
 		g_skip = 0;
 	}
 
-	ret = dpmgr_wait_event_ts(pgc->dpmgr_handle, DISP_PATH_EVENT_IF_VSYNC,
-				  &ts);
+	if ((!primary_display_is_video_mode()) &&
+			disp_helper_get_option(DISP_OPT_AOD_RAMLESS) &&
+			(primary_display_get_power_mode_nolock() == DOZE)) {
+		doze_wait = disp_lcm_get_doze_delay(pgc->plcm);
+		for (i = 0; i < doze_wait; i++) {
+			ret = dpmgr_wait_event_ts(pgc->dpmgr_handle,
+				DISP_PATH_EVENT_IF_VSYNC, &ts);	
+		}
+	} else {
+		ret = dpmgr_wait_event_ts(pgc->dpmgr_handle,
+			DISP_PATH_EVENT_IF_VSYNC, &ts);
+	}
 
 	if (ret == -2) {
 		DISP_PR_INFO(
@@ -5135,6 +5236,7 @@ int suspend_to_full_roi(void)
 int primary_display_suspend(void)
 {
 	enum DISP_STATUS ret = DISP_STATUS_OK;
+		struct LCM_DRIVER *lcm_drv = pgc->plcm->drv;
 #ifdef MTK_FB_MMDVFS_SUPPORT
 	unsigned long long bandwidth;
 #endif
@@ -5234,6 +5336,11 @@ int primary_display_suspend(void)
 	mmprofile_log_ex(ddp_mmp_get_events()->primary_suspend,
 			 MMPROFILE_FLAG_PULSE, 0, 3);
 
+	/*ramless need send 28 10 befor LP11*/
+	if (disp_helper_get_option(DISP_OPT_AOD_RAMLESS) &&
+		primary_display_get_power_mode_nolock() == FB_SUSPEND)
+			disp_lcm_aod(pgc->plcm, 8, NULL);
+
 	DISPDBG("[POWER]primary display path stop[begin]\n");
 	dpmgr_path_stop(pgc->dpmgr_handle, CMDQ_DISABLE);
 	DISPCHECK("[POWER]primary display path stop[end]\n");
@@ -5250,17 +5357,24 @@ int primary_display_suspend(void)
 	mmprofile_log_ex(ddp_mmp_get_events()->primary_suspend,
 			 MMPROFILE_FLAG_PULSE, 0, 5);
 /*aod, cmd mode */
-	DISPMSG("%s, power_mode=%d, lcm_power_state=%d\n", __func__,
-		primary_display_get_power_mode_nolock(),
-		primary_display_get_lcm_power_state_nolock());
 	if (primary_display_get_power_mode_nolock() == DOZE_SUSPEND) {
-		if (primary_display_get_lcm_power_state_nolock() !=
-		    LCM_ON_LOW_POWER) {
-			if (pgc->plcm->drv->aod)
-				disp_lcm_aod(pgc->plcm, 1);
+		if (primary_display_get_lcm_power_state_nolock() != LCM_ON_LOW_POWER) {
+			if (primary_display_get_lcm_power_state_nolock() == LCM_OFF) {
+				/*fb suspend ==> doze suspend*/
+				if (pgc->plcm->drv->aod) {
+					disp_lcm_aod(pgc->plcm, 1, NULL);
+					#ifndef CONFIG_LCM_PANEL_TYPE_TFT
+					atomic_set(&aod_control, 1);
+					#endif
+				}
+			} else {
+				/*fb resume ==> doze suspend*/
+				if (pgc->plcm->drv->aod) {
+					disp_lcm_aod(pgc->plcm, 3, NULL);
+				}
+			}
+			primary_display_set_lcm_power_state_nolock(LCM_ON_LOW_POWER);
 
-			primary_display_set_lcm_power_state_nolock(
-							LCM_ON_LOW_POWER);
 		}
 		DISPDBG("[POWER]primary display path Release Fence[begin]\n");
 		primary_suspend_release_fence();
@@ -5294,6 +5408,13 @@ int primary_display_suspend(void)
 			 MMPROFILE_FLAG_PULSE, 0, 8);
 
 	pgc->lcm_refresh_rate = 60;
+	if (primary_display_get_lcm_power_state_nolock() == LCM_OFF) {
+	if (lcm_drv->suspend_power)
+		#ifdef CONFIG_LCM_PANEL_TYPE_TFT
+		if (phone_shutdown_state)
+		#endif
+			lcm_drv->suspend_power();
+	}
 #ifdef CONFIG_MTK_HIGH_FRAME_RATE
 	/*DynFPS*/
 	pgc->lcm_refresh_rate =
@@ -5303,9 +5424,7 @@ int primary_display_suspend(void)
 	active_cfg = pgc->active_cfg;
 #endif
 	/* pgc->state = DISP_SLEPT; */
-#ifdef CONFIG_MTK_MT6382_BDG
-	bdg_common_deinit(DISP_BDG_DSI0, NULL);
-#endif
+
 done:
 #ifdef MTK_FB_MMDVFS_SUPPORT
 	/*
@@ -5400,33 +5519,148 @@ static int check_switch_lcm_mode_for_debug(void)
 int primary_display_lcm_power_on_state(int alive)
 {
 	int skip_update = 0;
-	DISPMSG("%s, power_mode=%d, lcm_power_state=%d\n", __func__,
-		primary_display_get_power_mode_nolock(),
-		primary_display_get_lcm_power_state_nolock());
-	if (primary_display_get_power_mode_nolock() == DOZE) {
-		if (primary_display_get_lcm_power_state_nolock() !=
-			LCM_ON_LOW_POWER) {
-			if (pgc->plcm->drv->aod)
-				disp_lcm_aod(pgc->plcm, 1);
+	
+	enum mtkfb_power_mode cur_pm;
+	enum mtkfb_power_mode prev_pm;
+	enum lcm_power_state cur_ps;
+	int ramless_aod_opt_sta = 0;
+
+	cur_pm = primary_display_get_power_mode_nolock();
+	cur_ps = primary_display_get_lcm_power_state_nolock();
+	prev_pm = primary_display_get_prev_power_mode_nolock();
+	ramless_aod_opt_sta =
+		disp_helper_get_option(DISP_OPT_AOD_RAMLESS);
+
+	if (alive == 1)
+		primary_display_idlemgr_kick(__func__, 0);
+
+	if (cur_pm == DOZE) {
+		LCM_INFO("cur_pm == DOZE\n");
+		if (cur_ps != LCM_ON_LOW_POWER) 
+		{
+			LCM_INFO("cur_ps != LCM_ON_LOW_POWER\n");
+			if (pgc->plcm->drv->aod) 
+			{
+				if (ramless_aod_opt_sta) 
+				{
+					if (cur_ps == LCM_ON) 
+					{
+						/*resume->doze*/
+						LCM_INFO("resume->doze\n");
+						disp_lcm_aod(pgc->plcm, 7, NULL);
+						primary_display_switch_aod(0);
+						atomic_set(&aod_control, 1);
+					} 
+					else 
+					{
+						/*suspend->doze*/
+						LCM_INFO("suspend->doze\n");
+						disp_lcm_resume(pgc->plcm);
+						disp_lcm_set_aod_area(pgc->plcm,
+							NULL, aod_area_cmd);
+						disp_lcm_aod(pgc->plcm, 1, NULL);
+						#ifndef CONFIG_LCM_PANEL_TYPE_TFT
+							atomic_set(&aod_control, 1);
+						#endif
+						//primary_display_switch_aod(0);
+					}
+				} 
+				else 
+				{
+					LCM_INFO("!pgc->plcm->drv->aod\n");
+					disp_lcm_aod(pgc->plcm, 1, NULL);
+				}
+			} 
 			else if (!alive)
+			{
+				LCM_INFO("!alive\n");
 				disp_lcm_resume(pgc->plcm);
-
-			primary_display_set_lcm_power_state_nolock(
-				LCM_ON_LOW_POWER);
-		} else
-			skip_update = 1;
-	} else if (primary_display_get_power_mode_nolock() == FB_RESUME) {
-		if (primary_display_get_lcm_power_state_nolock() != LCM_ON) {
-			DISPMSG("[POWER]lcm resume[begin]\n");
-
-			if (primary_display_get_lcm_power_state_nolock() !=
-				LCM_ON_LOW_POWER) {
-				disp_lcm_resume(pgc->plcm);
-			} else {
-				disp_lcm_aod(pgc->plcm, 0);
-				skip_update = 1;
 			}
-			DISPMSG("[POWER]lcm resume[end]\n");
+			primary_display_set_lcm_power_state_nolock(LCM_ON_LOW_POWER);
+		} 
+		else 
+		{
+			LCM_INFO("cur_ps == LCM_ON_LOW_POWER\n");
+			skip_update = 1;
+			if (ramless_aod_opt_sta) 
+			{
+				/*doze_suspend->doze*/
+				LCM_INFO("doze_suspend->doze\n");
+				disp_lcm_set_aod_area(pgc->plcm,NULL, aod_area_cmd);
+			}
+		}
+	} 
+	else if (cur_pm == FB_RESUME) 
+	{
+		LCM_INFO("cur_pm == FB_RESUME\n");
+		if (cur_ps != LCM_ON) {
+			DISPDBG("[POWER]lcm resume[begin]\n");
+
+			if (cur_ps != LCM_ON_LOW_POWER) {
+				/*2.suspend->resume*/
+				disp_lcm_resume(pgc->plcm);
+				LCM_INFO("suspend->resume\n");
+			} 
+			else 
+			{
+			/*
+				if (!alive) {
+					if (atomic_read(&doze_mode_state) != LCM_PANEL_ON) {
+						disp_lcm_aod(pgc->plcm, 0, NULL);
+					}
+				skip_update = 1;
+				} 
+				else {
+					LCM_INFO("alive\n");
+			*/
+				if (ramless_aod_opt_sta) 
+				{
+					LCM_INFO("ramless_aod_opt_sta\n");
+					if (prev_pm == DOZE) 
+					{
+						/*doze->resume*/
+						LCM_INFO("doze->resume\n");
+						primary_display_switch_aod(1);
+					} 
+					else 
+					{
+						/*doze_suspend->resume*/
+						LCM_INFO("doze_suspend->resume\n");
+						disp_lcm_aod(pgc->plcm, 0, NULL);
+						atomic_set(&aod_control, 1);
+					}
+				} 
+				else 
+				{
+					LCM_INFO("disp_lcm_aod(pgc->plcm, 0)\n");
+					disp_lcm_aod(pgc->plcm, 0,NULL);
+/*
+						_blocking_flush();
+						if (dpmgr_path_is_busy(pgc->dpmgr_handle)) {
+							int event_ret;
+							event_ret = dpmgr_wait_event_timeout(pgc->dpmgr_handle,
+							 DISP_PATH_EVENT_FRAME_DONE, HZ * 1);
+							DISPCHECK("display path is busy now,wait frame done,event=%d\n",
+								event_ret);
+							if (event_ret <= 0) {
+								DISP_PR_ERR("wait frame done in suspend timeout\n");
+								primary_display_diagnose(__func__,__LINE__);
+							}
+						}
+						DISPCHECK("%s stop trig loop\n", __func__);
+						_cmdq_stop_trigger_loop();
+						if (atomic_read(&doze_mode_state) != LCM_PANEL_ON) {
+							disp_lcm_aod(pgc->plcm, 0, NULL);
+						}
+						skip_update = 1;
+						_cmdq_start_trigger_loop();
+*/
+					}
+					skip_update = 1;
+					LCM_INFO("skip_update = 1\n");
+				}
+	//		}
+			DISPCHECK("[POWER]lcm resume[end]\n");
 			primary_display_set_lcm_power_state_nolock(LCM_ON);
 		}
 	}
@@ -5434,64 +5668,38 @@ int primary_display_lcm_power_on_state(int alive)
 	return skip_update;
 }
 
-void primary_display_vdo_restart(bool need_wait_frame_done)
-{
-	struct cmdqRecStruct *qhandle = NULL;
-
-#ifdef CONFIG_MTK_MT6382_BDG
-		int ret = 0;
-
-		DISPFUNCSTART();
-		ret = cmdqRecCreate(CMDQ_SCENARIO_DISP_ESD_CHECK, &qhandle);
-		if (ret) {
-			DISPCHECK("%s,cmdq create fail!\n", __func__);
-			return;
-		}
-		cmdqRecReset(qhandle);
-		if (need_wait_frame_done)
-			cmdqRecWait(qhandle, CMDQ_EVENT_MUTEX0_STREAM_EOF);
-
-		/* stop dsi vdo mode */
-		dpmgr_path_build_cmdq(primary_get_dpmgr_handle(),
-				qhandle, CMDQ_STOP_VDO_MODE, 0);
-
-//		cmdqRecClearEventToken(qhandle, CMDQ_EVENT_MUTEX0_STREAM_EOF);
-
-		dpmgr_path_build_cmdq(primary_get_dpmgr_handle(), qhandle,
-				CMDQ_START_VDO_MODE, 0);
-
-		dpmgr_path_trigger(primary_get_dpmgr_handle(),
-				qhandle, CMDQ_ENABLE);
-
-		ddp_mutex_set_sof_wait(dpmgr_path_get_mutex(
-				primary_get_dpmgr_handle()), qhandle, 0);
-
-		cmdqRecFlush(qhandle);
-#endif
-	cmdqRecDestroy(qhandle);
-}
-
 int primary_display_resume(void)
 {
 	enum DISP_STATUS ret = DISP_STATUS_OK;
 	struct ddp_io_golden_setting_arg io_gs;
 	int i, skip_update = 0;
-	struct disp_ddp_path_config *data_config;
+	struct LCM_DRIVER *lcm_drv = pgc->plcm->drv;
 #ifdef MTK_FB_MMDVFS_SUPPORT
 	unsigned long long bandwidth;
 	unsigned int in_fps = 60;
 	unsigned int out_fps = 60;
 #endif
+	enum mtkfb_power_mode cur_pm;
+	enum lcm_power_state cur_ps;
+	int ramless_aod_opt_sta = 0;
+
+	cur_pm = primary_display_get_power_mode_nolock();
+	cur_ps = primary_display_get_lcm_power_state_nolock();
+	ramless_aod_opt_sta =
+		disp_helper_get_option(DISP_OPT_AOD_RAMLESS);
 
 	DISPCHECK("%s begin\n", __func__);
-	DISPFUNCSTART();
 	mmprofile_log_ex(ddp_mmp_get_events()->primary_resume,
 			 MMPROFILE_FLAG_START, 0, 0);
 
 	_primary_path_lock(__func__);
 	if (pgc->state == DISP_ALIVE) {
-		DISPCHECK("primary display path is already resume, skip\n");
+		if (disp_helper_get_option(DISP_OPT_IDLE_MGR))
+			//primary_display_idlemgr_kick(__func__, 0);
 		primary_display_lcm_power_on_state(1);
+		DISPCHECK("primary display path is already resume, skip\n");
+		_cmdq_insert_wait_frame_done_token_mira(
+			pgc->cmdq_handle_config);
 		goto done;
 	}
 	mmprofile_log_ex(ddp_mmp_get_events()->primary_resume,
@@ -5499,7 +5707,7 @@ int primary_display_resume(void)
 
 	/* Register primary session cmdq dump callback */
 	dpmgr_register_cmdq_dump_callback(primary_display_cmdq_dump);
-	DISP_PR_INFO("[%s][%d]\n", __func__, __LINE__);
+
 	if (is_ipoh_bootup) {
 		DISPCHECK("[primary display path] leave %s - IPOH\n", __func__);
 		DISPCHECK("ESD check start[begin]\n");
@@ -5515,7 +5723,7 @@ int primary_display_resume(void)
 		/* pgc->state = DISP_ALIVE; */
 		goto done;
 	}
-	DISP_PR_INFO("[DENNIS][%s][%d]\n", __func__, __LINE__);
+
 	if (disp_helper_get_option(DISP_OPT_CV_BYSUSPEND)) {
 		int dsi_force_config = 0;
 
@@ -5523,6 +5731,8 @@ int primary_display_resume(void)
 		if (dsi_force_config)
 			DSI_ForceConfig(1);
 	}
+	if ((lcm_drv->resume_power) && (primary_display_get_lcm_power_state_nolock() == LCM_OFF))
+		lcm_drv->resume_power();
 		/*ARR*/
 	if (primary_display_is_support_ARR()) {
 		primary_display_init_arr_fps();
@@ -5534,21 +5744,12 @@ int primary_display_resume(void)
 	primary_display_init_multi_cfg_info();
 	in_fps = out_fps = primary_display_get_default_disp_fps(0);
 	pgc->first_cfg = 1;
-	DISP_PR_INFO("[DENNIS][%s][%d]\n", __func__, __LINE__);
+
 	DISPMSG("%s,g_force_cfg=%d,g_force_cfg_id=%d\n",
 		__func__, g_force_cfg, g_force_cfg_id);
 
 #endif
-#ifdef CONFIG_MTK_MT6382_BDG
-	//	mmdvfs_qos_force_step(0);
-	/*	559-449-314-273*/
-	disp_pm_qos_update_mmclk(559); // workaround for resume fail
 
-	data_config = dpmgr_path_get_last_config(pgc->dpmgr_handle);
-	DISP_PR_INFO("[%s][%d]\n", __func__, __LINE__);
-	bdg_common_init(DISP_BDG_DSI0, data_config, NULL);
-	mipi_dsi_rx_mac_init(DISP_BDG_DSI0, data_config, NULL);
-#endif
 	DISPDBG("dpmanager path power on[begin]\n");
 	dpmgr_path_power_on(pgc->dpmgr_handle, CMDQ_DISABLE);
 	if (disp_helper_get_option(DISP_OPT_MET_LOG))
@@ -5564,10 +5765,10 @@ int primary_display_resume(void)
 			 MMPROFILE_FLAG_PULSE, 0, 2);
 
 	DISPDBG("[POWER]dpmanager re-init[begin]\n");
-	DISP_PR_INFO("[%s][%d]\n", __func__, __LINE__);
+
 	{
 		struct LCM_PARAMS *lcm_param;
-//		struct disp_ddp_path_config *data_config;
+		struct disp_ddp_path_config *data_config;
 
 		/*
 		 * disconnect primary path first
@@ -5578,10 +5779,23 @@ int primary_display_resume(void)
 		ddp_disconnect_path(DDP_SCENARIO_PRIMARY_ALL, NULL);
 		ddp_disconnect_path(DDP_SCENARIO_PRIMARY_RDMA0_COLOR0_DISP,
 				    NULL);
-		DISPCHECK("cmd/video mode=%d\n",
-			  primary_display_is_video_mode());
-		dpmgr_path_set_video_mode(pgc->dpmgr_handle,
-					  primary_display_is_video_mode());
+		if (ramless_aod_opt_sta) {
+			if (cur_pm == DOZE) {
+				pgc->plcm->params->dsi.mode = CMD_MODE;
+				dpmgr_path_set_video_mode(pgc->dpmgr_handle,
+					primary_display_is_video_mode());
+			} else if (cur_pm == FB_RESUME) {
+				pgc->plcm->params->dsi.mode =
+					primary_display_def_dst_mode;
+				dpmgr_path_set_video_mode(pgc->dpmgr_handle,
+					primary_display_is_video_mode());
+			}
+		} else {
+			DISPCHECK("cmd/video mode=%d\n",
+				  primary_display_is_video_mode());
+			dpmgr_path_set_video_mode(pgc->dpmgr_handle,
+						  primary_display_is_video_mode());
+		}
 
 		dpmgr_path_connect(pgc->dpmgr_handle, CMDQ_DISABLE);
 		if (primary_display_is_decouple_mode()) {
@@ -5656,6 +5870,14 @@ int primary_display_resume(void)
 			data_config->ovl_config[i].layer_en = 0;
 		}
 		data_config->ovl_dirty = 1;
+		if (ramless_aod_opt_sta) {
+			if (cur_pm == DOZE)
+				data_config->dispif_config.dsi.mode =
+					pgc->plcm->params->dsi.mode;
+			else if (cur_pm == FB_RESUME)
+				data_config->dispif_config.dsi.mode =
+					pgc->plcm->params->dsi.mode;
+		}
 
 		ret = dpmgr_path_config(pgc->dpmgr_handle, data_config, NULL);
 		mmprofile_log_ex(ddp_mmp_get_events()->primary_resume,
@@ -5668,14 +5890,14 @@ int primary_display_resume(void)
 		io_gs.is_decouple_mode = primary_display_is_decouple_mode();
 		dpmgr_path_ioctl(pgc->dpmgr_handle, NULL,
 				 DDP_OVL_GOLDEN_SETTING, &io_gs);
+
 	}
-	DISP_PR_INFO("[DENNIS][%s][%d]\n", __func__, __LINE__);
 	DISPCHECK("[POWER]dpmanager re-init[end]\n");
 	mmprofile_log_ex(ddp_mmp_get_events()->primary_resume,
 			 MMPROFILE_FLAG_PULSE, 0, 3);
 
 	skip_update = primary_display_lcm_power_on_state(0);
-	DISP_PR_INFO("[DENNIS][%s][%d]\n", __func__, __LINE__);
+
 	mmprofile_log_ex(ddp_mmp_get_events()->primary_resume,
 			 MMPROFILE_FLAG_PULSE, 0, 4);
 	if (dpmgr_path_is_busy(pgc->dpmgr_handle)) {
@@ -5689,13 +5911,6 @@ int primary_display_resume(void)
 
 	mmprofile_log_ex(ddp_mmp_get_events()->primary_resume,
 			 MMPROFILE_FLAG_PULSE, 0, 5);
-
-#ifdef CONFIG_MTK_MT6382_BDG
-	if (get_mt6382_init()) {
-		bdg_tx_set_mode(DISP_BDG_DSI0, NULL, get_bdg_tx_mode());
-		bdg_tx_start(DISP_BDG_DSI0, NULL);
-	}
-#endif
 	DISPINFO("[POWER]dpmgr path start[begin]\n");
 	dpmgr_path_start(pgc->dpmgr_handle, CMDQ_DISABLE);
 
@@ -5722,7 +5937,6 @@ int primary_display_resume(void)
 		DISPINFO("[POWER]build cmdq trigger loop[end]\n");
 	}
 	if (primary_display_is_video_mode()) {
-		DISP_PR_INFO("[%s][%d]\n", __func__, __LINE__);
 		mmprofile_log_ex(ddp_mmp_get_events()->primary_resume,
 				 MMPROFILE_FLAG_PULSE, 1, 7);
 		/*
@@ -5742,12 +5956,8 @@ int primary_display_resume(void)
 				       DISP_PATH_EVENT_IF_VSYNC,
 				       DDP_IRQ_RDMA0_DONE);
 		dpmgr_enable_event(pgc->dpmgr_handle, DISP_PATH_EVENT_IF_VSYNC);
-#ifdef CONFIG_MTK_MT6382_BDG
-		if (primary_display_is_video_mode())
-			primary_display_vdo_restart(false);
-#else
-			dpmgr_path_trigger(pgc->dpmgr_handle, NULL, CMDQ_DISABLE);
-#endif
+
+		dpmgr_path_trigger(pgc->dpmgr_handle, NULL, CMDQ_DISABLE);
 #if 0
 		if (disp_helper_get_option(DISP_OPT_ARR_PHASE_1)) {
 			dpmgr_map_event_to_irq(pgc->dpmgr_handle,
@@ -5768,7 +5978,6 @@ int primary_display_resume(void)
 		_cmdq_start_trigger_loop();
 		DISPDBG("[POWER]start cmdq[end]\n");
 	}
-	DISP_PR_INFO("[%s][%d]\n", __func__, __LINE__);
 	mmprofile_log_ex(ddp_mmp_get_events()->primary_resume,
 			 MMPROFILE_FLAG_PULSE, 0, 9);
 
@@ -5802,11 +6011,12 @@ int primary_display_resume(void)
 	}
 	mmprofile_log_ex(ddp_mmp_get_events()->primary_resume,
 			 MMPROFILE_FLAG_PULSE, 0, 11);
-DISP_PR_INFO("[%s][%d]\n", __func__, __LINE__);
+
 #ifdef MTK_FB_MMDVFS_SUPPORT
 	/* update bandwidth */
 	disp_pm_qos_set_ovl_bw(in_fps, out_fps, &bandwidth);
 	disp_pm_qos_update_bw(bandwidth);
+	//disp_pm_qos_update_vcore(); // for 1.7GHZ MIPI CLK debug
 #endif
 
 	/*
@@ -5840,27 +6050,8 @@ DISP_PR_INFO("[%s][%d]\n", __func__, __LINE__);
 					       DDP_IRQ_UNKNOWN);
 		}
 	}
-#ifdef CONFIG_MTK_HIGH_FRAME_RATE
-	/*DynFPS*/
-	/*check whether need change fps according cfg*/
-	if (primary_display_is_support_DynFPS()) {
-		int last_cfg = primary_display_get_current_cfg_id();
-
-		/* easy way to force change fps */
-		primary_display_update_cfg_id(!last_cfg);
-		primary_display_dynfps_chg_fps(last_cfg);
-	}
-#endif
 
 done:
-#ifdef CONFIG_MTK_MT6382_BDG
-	if (primary_display_is_video_mode())
-		mmdvfs_qos_force_step(0);
-/*	559-449-314-273*/
-	else
-		disp_pm_qos_update_mmclk(449);
-#endif
-	DISP_PR_INFO("[%s][%d]\n", __func__, __LINE__);
 	primary_set_state(DISP_ALIVE);
 #if 0 //def CONFIG_TRUSTONIC_TRUSTED_UI
 	switch_set_state(&disp_switch_data, DISP_ALIVE);
@@ -5890,7 +6081,7 @@ done:
 	disp_tphint_reset_status();
 
 	lcm_fps_ctx_reset(&lcm_fps_ctx);
-	DISPFUNCEND();
+
 	return ret;
 }
 
@@ -5971,7 +6162,11 @@ int primary_display_aod_backlight(int level)
 
 	if (primary_display_get_lcm_power_state_nolock() != LCM_ON_LOW_POWER) {
 		if (pgc->plcm->drv->aod)
+#ifndef CONFIG_LCM_PANEL_TYPE_TFT
+			disp_lcm_aod(pgc->plcm, 1, NULL);
+#else
 			disp_lcm_aod(pgc->plcm, 1);
+#endif
 		else
 			disp_lcm_resume(pgc->plcm);
 		primary_display_set_lcm_power_state_nolock(LCM_ON_LOW_POWER);
@@ -6050,7 +6245,11 @@ skip_resume:
 
 	if (primary_display_get_lcm_power_state_nolock() != LCM_ON_LOW_POWER) {
 		if (pgc->plcm->drv->aod)
+#ifndef CONFIG_LCM_PANEL_TYPE_TFT
+			disp_lcm_aod(pgc->plcm, 1, NULL);
+#else
 			disp_lcm_aod(pgc->plcm, 1);
+#endif
 
 		primary_display_set_lcm_power_state_nolock(LCM_ON_LOW_POWER);
 	}
@@ -7388,12 +7587,10 @@ static int _config_ovl_input(struct disp_frame_cfg_t *cfg,
 			pconfig->read_dum_reg[i] = 0;
 
 			/* full transparent layer */
-			if (!has_secure_layer(cfg)) {
-				cmdqRecBackupRegisterToSlot(cmdq_handle,
-					pgc->ovl_sbch_info, i,
-					disp_addr_convert
-					(DISP_REG_OVL_SBCH_STS + ovl_base));
-			}
+			cmdqRecBackupRegisterToSlot(cmdq_handle,
+				pgc->ovl_sbch_info, i,
+				disp_addr_convert
+				(DISP_REG_OVL_SBCH_STS + ovl_base));
 		}
 	}
 
@@ -7401,10 +7598,8 @@ static int _config_ovl_input(struct disp_frame_cfg_t *cfg,
 	    !primary_display_is_decouple_mode()) {
 		unsigned long ovl_base = ovl_base_addr(DISP_MODULE_OVL0_2L);
 
-		if (!has_secure_layer(cfg)) {
-			cmdqRecBackupRegisterToSlot(cmdq_handle, pgc->ovl_status_info,
-				0, disp_addr_convert(DISP_REG_OVL_STA + ovl_base));
-		}
+		cmdqRecBackupRegisterToSlot(cmdq_handle, pgc->ovl_status_info,
+			0, disp_addr_convert(DISP_REG_OVL_STA + ovl_base));
 	}
 
 done:
@@ -7429,6 +7624,7 @@ static int primary_frame_cfg_input(struct disp_frame_cfg_t *cfg)
 	struct disp_ddp_path_config *pconfig = NULL;
 	struct disp_ddp_path_config *ovl2mem_pconfig = NULL;
 #endif
+	enum lcm_power_state cur_ps;
 
 	if (gTriggerDispMode > 0)
 		return 0;
@@ -7582,6 +7778,27 @@ static int primary_frame_cfg_input(struct disp_frame_cfg_t *cfg)
 		mmprofile_log_ex(ddp_mmp_get_events()->primary_wdma_config,
 				MMPROFILE_FLAG_PULSE, pgc->dc_buf_id, wdma_mva);
 	}
+
+	cur_ps = primary_display_get_lcm_power_state_nolock();
+	if (atomic_read(&smart_aod_update) == 1 && cur_ps != LCM_ON) {
+		/*aod_display_on*/
+		atomic_set(&smart_aod_update, 0);
+		disp_lcm_set_aod_area(pgc->plcm, cmdq_handle, NULL);
+	}
+#ifndef CONFIG_LCM_PANEL_TYPE_TFT
+	if (atomic_read(&aod_control) == 1) {
+		/*aod_display_on*/
+		atomic_set(&aod_control, 0);
+		disp_lcm_aod(pgc->plcm, 4, cmdq_handle);
+	}
+
+	if (atomic_read(&display_on_control) == 1) {
+		atomic_set(&display_on_control, 0);
+		disp_lcm_enable(pgc->plcm, cmdq_handle);
+	}
+#endif
+
+
 done:
 	return ret;
 }
@@ -7700,14 +7917,58 @@ int primary_display_frame_cfg(struct disp_frame_cfg_t *cfg)
 
 		dprec_start(trigger_event, cfg->present_fence_idx, proc_name);
 	}
-
+	//LCM_INFO("frame done");
+	#ifndef CONFIG_LCM_PANEL_TYPE_TFT
 	if (disp_helper_get_option(DISP_OPT_LCM_HBM)) {
-		primary_display_set_lcm_hbm(cfg->hbm_en, cfg);
-		primary_display_hbm_wait(cfg->hbm_en);
-	}
+		static int current_shooter_flag;
+		static int current_ud_flag;
+		int hbm_flag, shooter_flag, ud_flag = 0;
+		int prev_hbm = atomic_read(&oled_hbm_status);
+		ud_flag = cfg->is_hbm;
 
+		hbm_flag = ud_flag & VIVO_UD_HBM_MASK;
+		if (current_ud_flag != hbm_flag && (hbm_flag == 1 || hbm_flag == 2)) {
+			oled_ud_flag = hbm_flag;
+			current_ud_flag = hbm_flag;
+			LCD_INFO("ud-dsi-flag set %d\n", ud_flag);
+		} else
+			oled_ud_flag = hbm_flag % 2;
+
+		shooter_flag = (ud_flag & VIVO_SHOOTER_MASK);
+		if (current_shooter_flag != shooter_flag && (shooter_flag != 0)) {
+			if (!(current_shooter_flag & shooter_flag & SHOOTER_HIDE_BIT))
+				uevent_shooter_flag = shooter_flag;
+			current_shooter_flag = shooter_flag;
+			LCM_DEBUG("set shooter flag: %d\n", shooter_flag);
+		}
+
+		if (uevent_shooter_flag != 0) {
+			atomic_set(&after_shooter_count, 1);
+			fingershooter_status = uevent_shooter_flag;
+			uevent_shooter_flag = 0;
+			notify_udfp_cyan_jiffies = get_jiffies_64();
+			LCM_DEBUG(">>>>>>%s notify shooter: %d\n", __func__, fingershooter_status);
+		}
+		LCM_DEBUG("ud_flag = %d hbm_flag = %d  prev_hbm = %d  current_backlight = %d", ud_flag, hbm_flag, prev_hbm, current_backlight);
+
+		/**** only enable  hbm when panel resume with alpha frame */
+		if ((primary_display_get_power_mode_nolock() == FB_RESUME) && (current_backlight > 0) && (silent_reboot != 1) && (hbm_flag != 0)) {
+			if ((prev_hbm <= HBM_UDFP_RESUME_MODE_OFF)
+				|| ((prev_hbm == HBM_UDFP_AOD_MODE_OFF) && (hbm_flag == 1))
+				|| ((prev_hbm == HBM_UDFP_AOD_MODE_ON) && (hbm_flag == 2))) {
+				primary_display_set_lcm_hbm((hbm_flag + 3));
+				primary_display_hbm_wait((hbm_flag + 3));
+			}
+		}
+		oled_weakup_hbmon = hbm_flag % 2;
+
+	}
+	#endif
 	primary_display_trigger_nolock(0, NULL, 0);
 
+	if (disp_helper_get_option(DISP_OPT_LCM_HBM)) {
+		sde_notify_fingerprint_status();
+	}
 
 #ifdef CONFIG_MTK_HIGH_FRAME_RATE
 	/*DynFPS*/
@@ -7937,13 +8198,6 @@ err:
 int primary_display_switch_mode(int sess_mode, unsigned int session, int force)
 {
 	int ret = 0;
-
-	if (!force && sess_mode == primary_display_set_sess_mode
-		&& primary_display_is_mirror_mode() == 0) {
-		DISPDBG("%s+\n", __func__);
-		return ret;
-	}
-	primary_display_set_sess_mode = sess_mode;
 
 	_primary_path_lock(__func__);
 	primary_display_idlemgr_kick(__func__, 0);
@@ -8676,7 +8930,43 @@ int _set_backlight_by_cmdq(unsigned int level)
 
 	return ret;
 }
+/*********************lcmacl start**************************/
+int _set_vivo_MipiCmd_HS(unsigned char cmdtype, unsigned int levelsetting)
+{
+	int ret = 0;
 
+	struct cmdqRecStruct *cmdq_handle_cabcopen = NULL;
+
+	ret = cmdqRecCreate(CMDQ_SCENARIO_PRIMARY_DISP, &cmdq_handle_cabcopen);
+	LCM_DEBUG("lcm driver cmdq open, handle=%p\n", cmdq_handle_cabcopen);
+	if (ret != 0) {
+		LCM_ERR("fail to create primary cmdq handle for lcm driver open\n");
+		return -1;
+	}
+
+	if (primary_display_is_video_mode()) {
+		cmdqRecReset(cmdq_handle_cabcopen);
+		_cmdq_insert_wait_frame_done_token_mira(cmdq_handle_cabcopen);
+		disp_lcm_vivo_SetMipiCmd_HS(pgc->plcm, cmdq_handle_cabcopen, cmdtype, levelsetting);
+		_cmdq_flush_config_handle_mira(cmdq_handle_cabcopen, 0);
+		LCM_DEBUG("[BL]_set_vivo_MipiCmd_HS ret=%d\n", ret);
+	} else {
+		cmdqRecReset(cmdq_handle_cabcopen);
+		cmdqRecWait(cmdq_handle_cabcopen, CMDQ_SYNC_TOKEN_CABC_EOF);
+		_cmdq_handle_clear_dirty(cmdq_handle_cabcopen);
+		_cmdq_insert_wait_frame_done_token_mira(cmdq_handle_cabcopen);
+		disp_lcm_vivo_SetMipiCmd_HS(pgc->plcm, cmdq_handle_cabcopen, cmdtype, levelsetting);
+		cmdqRecSetEventToken(cmdq_handle_cabcopen, CMDQ_SYNC_TOKEN_CONFIG_DIRTY);
+		cmdqRecSetEventToken(cmdq_handle_cabcopen, CMDQ_SYNC_TOKEN_CABC_EOF);
+		_cmdq_flush_config_handle_mira(cmdq_handle_cabcopen, 1);
+		LCM_DEBUG("[BL]_set_vivo_MipiCmd_HS ret=%d\n", ret);
+	}
+	cmdqRecDestroy(cmdq_handle_cabcopen);
+	cmdq_handle_cabcopen = NULL;
+
+	return ret;
+}
+/*********************lcmacl end**************************/
 int _set_backlight_by_cpu(unsigned int level)
 {
 	int ret = 0;
@@ -8742,12 +9032,37 @@ int _set_backlight_by_cpu(unsigned int level)
 	return ret;
 }
 
-static int _primary_display_set_lcm_hbm(bool en, struct disp_frame_cfg_t *cfg)
+/*********************lcm fb node interface**************************/
+void primary_display_vivo_SetMipiCmd_HS(unsigned char cmdtype, unsigned int levelsetting)
+{
+	enum lcm_power_state cur_ps;
+	_primary_path_switch_dst_lock();
+	_primary_path_lock(__func__);
+
+	 primary_display_idlemgr_kick((char *)__func__, 0);
+
+	cur_ps = primary_display_get_lcm_power_state_nolock();
+
+	if (cur_ps!= LCM_ON) {
+		if ((cmdtype == 0x02 ) && (levelsetting ==  HBM_UDFP_AOD_MODE_ON))
+			set_hbm_on_aod_exit = true;
+		LCM_INFO("set hbm flag in LCM_ON_LOW_POWER \n");
+	} else if (cur_ps != LCM_POWER_STATE_UNKNOWN) {
+		_set_vivo_MipiCmd_HS(cmdtype, levelsetting);
+	}
+
+	_primary_path_unlock(__func__);
+	_primary_path_switch_dst_unlock();
+}
+/*********************lcm hbm interface for fp **************************/
+static int _primary_display_set_lcm_hbm(int en)
 {
 	int ret = 0;
 	struct cmdqRecStruct *qhandle_hbm = NULL;
+	struct cmdqRecStruct *qhandle_dimming = NULL;
 
 	ret = cmdqRecCreate(CMDQ_SCENARIO_DISP_ESD_CHECK, &qhandle_hbm);
+	ret = cmdqRecCreate(CMDQ_SCENARIO_DISP_ESD_CHECK, &qhandle_dimming);
 	if (ret) {
 		DISPMSG("%s:failed to create cmdq handle\n", __func__);
 		return -1;
@@ -8755,94 +9070,93 @@ static int _primary_display_set_lcm_hbm(bool en, struct disp_frame_cfg_t *cfg)
 
 	if (!primary_display_is_video_mode()) {
 		cmdqRecReset(qhandle_hbm);
-		cmdqRecWait(qhandle_hbm, CMDQ_SYNC_TOKEN_CABC_EOF);
-		_cmdq_handle_clear_dirty(qhandle_hbm);
+		if (primary_get_state() == DISP_ALIVE) {
+			cmdqRecWait(qhandle_hbm, CMDQ_SYNC_TOKEN_CABC_EOF);
+			_cmdq_handle_clear_dirty(qhandle_hbm);
+			_cmdq_insert_wait_frame_done_token_mira(qhandle_hbm);
+		}
 
-		_cmdq_insert_wait_frame_done_token_mira(qhandle_hbm);
-		primary_display_hbm_delay(en, cfg);
 		disp_lcm_set_hbm(en, pgc->plcm, qhandle_hbm);
 
-		cmdqRecSetEventToken(qhandle_hbm, CMDQ_SYNC_TOKEN_CABC_EOF);
+		if (primary_get_state() == DISP_ALIVE)
+			cmdqRecSetEventToken(qhandle_hbm,
+					     CMDQ_SYNC_TOKEN_CABC_EOF);
 		_cmdq_flush_config_handle_mira(qhandle_hbm, 1);
+	} else {
+		if(oled_dimming_enable == 1 && en == HBM_UDFP_RESUME_MODE_ON) {
+			/*open hbm need close dimming*/
+			/*delay cmd need use different cmdq & delay after flush */
+			cmdqRecReset(qhandle_dimming);
+			_cmdq_insert_wait_frame_done_token_mira(qhandle_dimming);
+			disp_lcm_set_hbm(13, pgc->plcm, qhandle_dimming);
+			_cmdq_flush_config_handle_mira(qhandle_dimming, 0);
+			usleep_range(40000,41000);
+		}
+
+		cmdqRecReset(qhandle_hbm);
+		_cmdq_insert_wait_frame_done_token_mira(qhandle_hbm);
+		disp_lcm_set_hbm(en, pgc->plcm, qhandle_hbm);
+		_cmdq_flush_config_handle_mira(qhandle_hbm, 0);
 	}
 
 	cmdqRecDestroy(qhandle_hbm);
+	cmdqRecDestroy(qhandle_dimming);
 	qhandle_hbm = NULL;
 
+	if (en == HBM_UDFP_RESUME_MODE_ON) {
+		dpmgr_wait_event_timeout(pgc->dpmgr_handle, DISP_PATH_EVENT_IF_VSYNC, HZ / 20);
+		LCM_DEBUG("vivohbm-oled_hbm_status = %d, en = %d\n", atomic_read(&oled_hbm_status), en);
+		atomic_set(&oled_hbm_status, en);
+	}
+
+	if (en == HBM_UDFP_RESUME_MODE_OFF) {
+		dpmgr_wait_event_timeout(pgc->dpmgr_handle, DISP_PATH_EVENT_IF_VSYNC, HZ / 20);
+		LCM_DEBUG("vivohbm-oled_hbm_status = %d, en = %d\n", atomic_read(&oled_hbm_status), en);
+		atomic_set(&oled_hbm_status, en);
+	}
 	return ret;
 }
 
-/*make hbm setting occurred after ddic's internal vsync*/
-/* meanwhile leave enough time to config.*/
-int primary_display_hbm_delay(bool en, struct disp_frame_cfg_t *cfg)
-{
-	unsigned int fps;
-	int fpslevel;
-	unsigned int vsync_t;
-	unsigned int config_t;
-	unsigned int te_cycle;
-	unsigned long long delta_t;
-
-
-	fpslevel = cfg->active_config;
-	if (fpslevel >= DFPS_LEVELS) {
-		fpslevel = 0;
-		DISPMSG("%s, active_config out of range, use level 0\n", __func__);
-	}
-
-	fps = pgc->plcm->params->dsi.vsync_after_te[fpslevel].fps;
-	te_cycle = 1000000/fps;
-	vsync_t = pgc->plcm->params->dsi.vsync_after_te[fpslevel].trigger_after_te;
-	config_t = te_cycle -
-		pgc->plcm->params->dsi.vsync_after_te[fpslevel].config_expense_time;
-
-	delta_t = (sched_clock() - last_te_time)/1000;
-	if (delta_t > 2*te_cycle) {
-		udelay(te_cycle);
-		delta_t = (sched_clock() - last_te_time)/1000;
-	}
-	delta_t = delta_t%te_cycle;
-
-	if (delta_t < vsync_t || delta_t > config_t)
-		delta_t = te_cycle - delta_t + vsync_t;
-	while (delta_t) {
-		udelay(1);
-		delta_t--;
-	}
-
-	return 0;
-}
-
-int primary_display_set_lcm_hbm(bool en, struct disp_frame_cfg_t *cfg)
+int primary_display_set_lcm_hbm(int en)
 {
 	int state = 0;
 
 	state = disp_lcm_get_hbm_state(pgc->plcm);
+
+	LCM_DEBUG("vivohbm+state = %d, en = %d\n", state, en);
+
 	if (state == -1)
 		return -EINVAL;
-	else if (state == en)
+	else if ((state == en) && !((en == HBM_UDFP_RESUME_MODE_OFF) && (oled_weakup_hbmon == 1))) { /*flag change from 1 ==> 0 need to set hbm*/
 		return 0;
+	} else if ((state == HBM_UDFP_CALI_MODE_ON) || (state == HBM_UDFP_CALI_MODE_OFF)) {
+		LCM_DEBUG("udfp is calibrating, don't set hbm");
+		return 0;
+	} else if ((state < HBM_USER_AUTO_MODE_LEVEL3) &&  (en == HBM_UDFP_RESUME_MODE_OFF)) {
+		LCM_DEBUG("hbm auto mode is on, don't set hbm");
+		return 0;
+	}
 
 	if (disp_helper_get_stage() != DISP_HELPER_STAGE_NORMAL) {
 		DISPMSG("%s: skip, stage:%s\n", __func__,
 			disp_helper_stage_spy());
 		return 0;
 	}
-	if (pgc->state == DISP_SLEPT) {
-		DISPMSG("%s: skip, slept\n", __func__);
+	if (primary_display_get_power_mode_nolock() == FB_SUSPEND) {
+		DISPMSG("%s: in suspend, skip\n", __func__);
 		return 0;
 	}
 
 	primary_display_idlemgr_kick(__func__, 0);
 	if (primary_display_cmdq_enabled()) {
 		DISPMSG("set LCM hbm en:%d\n", en);
-		_primary_display_set_lcm_hbm(en, cfg);
+		_primary_display_set_lcm_hbm(en);
 	}
-
 	return 0;
 }
 
-int primary_display_hbm_wait(bool en)
+extern int g_hbm_wait;
+int primary_display_hbm_wait(int en)
 {
 	int wait = 0;
 	unsigned int wait_count = 0;
@@ -8854,23 +9168,25 @@ int primary_display_hbm_wait(bool en)
 		return 0;
 
 	wait_count = disp_lcm_get_hbm_time(en, pgc->plcm);
+
 	if (wait_count == -1)
 		return -EINVAL;
-
-	DISPMSG("LCM hbm %s wait %u-TE\n", en ? "enable" : "disable",
-		wait_count);
+	else if (wait_count)
+		LCM_INFO("LCM hbm %s wait %u-TE\n", (5-en) ? "enable" : "disable",
+			wait_count);
 
 	while (wait_count) {
 		primary_display_idlemgr_kick(__func__, 0);
 		wait_count--;
-		dpmgr_wait_event_timeout(pgc->dpmgr_handle,
-					 DISP_PATH_EVENT_IF_VSYNC, HZ);
+		dpmgr_wait_event_timeout(pgc->dpmgr_handle, DISP_PATH_EVENT_IF_VSYNC, HZ / 20);
 	}
+	LCM_DEBUG("vivohbm-oled_hbm_status = %d, en = %d\n", atomic_read(&oled_hbm_status), en);
 
-	disp_lcm_set_hbm_wait(false, pgc->plcm);
+	atomic_set(&oled_hbm_status, en);
+
+	disp_lcm_set_hbm_wait(0, pgc->plcm);
 	return 0;
 }
-
 int primary_display_setbacklight_nolock(unsigned int level)
 {
 	static unsigned int last_level;
@@ -8879,6 +9195,12 @@ int primary_display_setbacklight_nolock(unsigned int level)
 	if (disp_helper_get_stage() != DISP_HELPER_STAGE_NORMAL) {
 		DISPMSG("%s skip due to stage %s\n", __func__,
 			disp_helper_stage_spy());
+		return 0;
+	}
+	if (primary_display_get_power_mode_nolock() == DOZE_SUSPEND ||
+			primary_display_get_power_mode_nolock() == DOZE) {
+		DISPDBG(
+			"not support setbacklight in AOD mode by normal method!\n");
 		return 0;
 	}
 
@@ -8893,14 +9215,7 @@ int primary_display_setbacklight_nolock(unsigned int level)
 	} else {
 		primary_display_idlemgr_kick(__func__, 0);
 		if (primary_display_cmdq_enabled()) {
-			if (primary_display_is_video_mode()) {
-				mmprofile_log_ex(
-					ddp_mmp_get_events()->primary_set_bl,
-					MMPROFILE_FLAG_PULSE, 0, 7);
-				disp_lcm_set_backlight(pgc->plcm, NULL, level);
-			} else {
-				_set_backlight_by_cmdq(level);
-			}
+			_set_backlight_by_cmdq(level);
 			atomic_set(&delayed_trigger_kick, 1);
 		} else {
 			_set_backlight_by_cpu(level);
@@ -8933,30 +9248,9 @@ int _set_lcm_cmd_by_cmdq(unsigned int *lcm_cmd, unsigned int *lcm_count,
 		mmprofile_log_ex(ddp_mmp_get_events()->primary_set_cmd,
 				 MMPROFILE_FLAG_PULSE, 1, 2);
 		cmdqRecReset(cmdq_handle_lcm_cmd);
-#ifdef CONFIG_MTK_MT6382_BDG
-			cmdqRecWait(cmdq_handle_lcm_cmd, CMDQ_EVENT_MUTEX0_STREAM_EOF);
-			/* stop dsi vdo mode */
-			dpmgr_path_build_cmdq(primary_get_dpmgr_handle(),
-					cmdq_handle_lcm_cmd, CMDQ_STOP_VDO_MODE, 0);
-			disp_lcm_set_lcm_cmd(pgc->plcm, cmdq_handle_lcm_cmd, lcm_cmd,
+		disp_lcm_set_lcm_cmd(pgc->plcm, cmdq_handle_lcm_cmd, lcm_cmd,
 				     lcm_count, lcm_value);
-			dpmgr_path_build_cmdq(primary_get_dpmgr_handle(), cmdq_handle_lcm_cmd,
-					CMDQ_START_VDO_MODE, 0);
-			cmdqRecClearEventToken(cmdq_handle_lcm_cmd, CMDQ_EVENT_MUTEX0_STREAM_EOF);
-
-			dpmgr_path_trigger(primary_get_dpmgr_handle(),
-					cmdq_handle_lcm_cmd, CMDQ_ENABLE);
-			ddp_mutex_set_sof_wait(dpmgr_path_get_mutex(
-					primary_get_dpmgr_handle()), cmdq_handle_lcm_cmd, 0);
-
-			_cmdq_flush_config_handle_mira(cmdq_handle_lcm_cmd, 1);
-#else
-	_cmdq_insert_wait_frame_done_token_mira(cmdq_handle_lcm_cmd);
-			disp_lcm_set_lcm_cmd(pgc->plcm, cmdq_handle_lcm_cmd, lcm_cmd,
-					     lcm_count, lcm_value);
-			/*Async flush by cmdq*/
-			_cmdq_flush_config_handle_mira(cmdq_handle_lcm_cmd, 0);
-#endif
+		_cmdq_flush_config_handle_mira(cmdq_handle_lcm_cmd, 1);
 		DISPCHECK("[CMD]%s ret=%d\n", __func__, ret);
 	} else {
 		mmprofile_log_ex(ddp_mmp_get_events()->primary_set_bl,
@@ -8992,8 +9286,7 @@ int primary_display_setbacklight(unsigned int level)
 		_primary_path_lock(__func__);
 	}
 
-	_set_backlight_by_cmdq(level);
-
+	primary_display_setbacklight_nolock(level);
 
 	if (aal_is_support == false) {
 		_primary_path_unlock(__func__);
@@ -9789,6 +10082,145 @@ done:
 	_primary_path_unlock(__func__);
 	disp_sw_mutex_unlock(&(pgc->capture_lock));
 	_primary_path_switch_dst_unlock();
+	return ret;
+}
+
+/* mode: 0, switch to cmd mode; 1, switch to vdo mode */
+int primary_display_switch_aod(int mode)
+{
+	enum DISP_STATUS ret = DISP_STATUS_ERROR;
+	disp_path_handle disp_handle = NULL;
+	struct disp_ddp_path_config *pconfig = NULL;
+	int switch_mode = 0;
+
+	DISPFUNC();
+
+	LCM_INFO("enter switch aod, mode:%d\n",mode);
+	primary_display_cur_dst_mode = pgc->plcm->params->dsi.mode;
+	mmprofile_log_ex(ddp_mmp_get_events()->primary_display_switch_aod_mode,
+			 MMPROFILE_FLAG_START, primary_display_cur_dst_mode,
+			 mode);
+	DISPCHECK("[C2V]aod cur_mode:%d, dst_mode:%d\n",
+		primary_display_cur_dst_mode, mode);
+
+	if (pgc->plcm->params->type != LCM_TYPE_DSI) {
+		mmprofile_log_ex(
+			ddp_mmp_get_events()->primary_display_switch_aod_mode,
+			MMPROFILE_FLAG_PULSE, 5, pgc->plcm->params->type);
+		DISPCHECK("[C2V]dst mode switch only support DSI IF\n");
+		goto done;
+	}
+	if (pgc->state == DISP_SLEPT) {
+		mmprofile_log_ex(
+			ddp_mmp_get_events()->primary_display_switch_aod_mode,
+			MMPROFILE_FLAG_PULSE, 6, pgc->state);
+		DISPCHECK("%s: primary display path is already slept, skip\n",
+			  __func__);
+		goto done;
+	}
+
+	primary_display_idlemgr_kick(__func__, 0);
+	/*
+	 * When switch to VDO mode, go back to DL mode
+	 * if display path changes to DC mode by SMART OVL
+	 */
+	if (disp_helper_get_option(DISP_OPT_SMART_OVL) &&
+		!primary_display_is_video_mode()) {
+		/* switch to the mode before idle */
+		do_primary_display_switch_mode(DISP_SESSION_DIRECT_LINK_MODE,
+					primary_get_sess_id(), 0, NULL, 0);
+
+		set_is_dc(0);
+		DISPMSG("switch to the mode before idle\n");
+	}
+
+	mmprofile_log_ex(ddp_mmp_get_events()->primary_display_switch_aod_mode,
+			 MMPROFILE_FLAG_PULSE, 4, 0);
+	_cmdq_reset_config_handle();
+
+	/* 1.modify lcm mode - sw */
+	mmprofile_log_ex(ddp_mmp_get_events()->primary_display_switch_aod_mode,
+			 MMPROFILE_FLAG_PULSE, 4, 1);
+
+	LCM_DEBUG("%s  primary_display_def_dst_mode = %d\n",
+		__func__, primary_display_def_dst_mode);
+
+	if (mode) {
+		pgc->plcm->params->dsi.mode = primary_display_def_dst_mode;
+		switch_mode = primary_display_def_dst_mode;
+	} else {
+		pgc->plcm->params->dsi.mode = CMD_MODE;
+		switch_mode = CMD_MODE;
+	}
+	LCM_DEBUG("%s  mode = %d\n", __func__, primary_display_is_video_mode());
+
+	dpmgr_path_set_video_mode(pgc->dpmgr_handle,
+			  primary_display_is_video_mode());
+
+	/* 2.Change PLL CLOCK parameter and build fps lcm command */
+#if 0
+	disp_lcm_adjust_fps(pgc->cmdq_handle_config, pgc->plcm,
+				pgc->lcm_refresh_rate);
+#endif
+	disp_handle = pgc->dpmgr_handle;
+	pconfig = dpmgr_path_get_last_config(disp_handle);
+	pconfig->dispif_config.dsi.PLL_CLOCK = pgc->plcm->params->dsi.PLL_CLOCK;
+
+	_cmdq_stop_trigger_loop();
+
+	if(mode)
+		cmdqRecStopLoop(pgc->cmdq_handle_config);
+	/*3.send aod to normal cmd*/
+	if (primary_display_is_video_mode()) {
+		disp_lcm_aod(pgc->plcm, 0, NULL);
+	} else {
+		disp_lcm_aod(pgc->plcm, 1, NULL);
+		disp_lcm_set_aod_area(pgc->plcm, NULL, aod_area_cmd);
+	}
+
+	/* 4.re-config RDMA golden setting */
+	/* RDMA golden setting would change depend on VDO/CMD mode */
+	dpmgr_path_ioctl(pgc->dpmgr_handle, pgc->cmdq_handle_config,
+		DDP_RDMA_GOLDEN_SETTING, pconfig);
+
+	/* 5.Switch mode and change DSI clock */
+	if (dpmgr_path_ioctl(pgc->dpmgr_handle, pgc->cmdq_handle_config,
+		DDP_SWITCH_AOD_MODE, (void *)&switch_mode) != 0) {
+		mmprofile_log_ex(
+			ddp_mmp_get_events()->primary_display_switch_dst_mode,
+			MMPROFILE_FLAG_PULSE, 9, 0);
+		LCM_INFO("dpmgr_path_ioctl DDP_SWITCH_AOD_MODE error\n");
+		ret = -1;
+	}
+	pconfig->dispif_config.dsi.mode = pgc->plcm->params->dsi.mode;
+
+	/* 6. rebuild trigger loop */
+	mmprofile_log_ex(ddp_mmp_get_events()->primary_display_switch_aod_mode,
+			 MMPROFILE_FLAG_PULSE, 4, 2);
+
+	_cmdq_build_trigger_loop();
+	_cmdq_start_trigger_loop();
+	_cmdq_reset_config_handle();
+
+	mmprofile_log_ex(ddp_mmp_get_events()->primary_display_switch_aod_mode,
+			 MMPROFILE_FLAG_PULSE, 4, 3);
+	primary_display_cur_dst_mode = switch_mode;
+	DISPMSG("primary_display_cur_dst_mode %d\n",
+		primary_display_cur_dst_mode);
+	if (primary_display_is_video_mode())
+		dpmgr_map_event_to_irq(pgc->dpmgr_handle,
+					   DISP_PATH_EVENT_IF_VSYNC,
+					   DDP_IRQ_RDMA0_DONE);
+	else
+		dpmgr_map_event_to_irq(pgc->dpmgr_handle,
+					   DISP_PATH_EVENT_IF_VSYNC,
+					   DDP_IRQ_DSI0_EXT_TE);
+
+	ret = DISP_STATUS_OK;
+done:
+	primary_display_idlemgr_kick(__func__, 0);
+	mmprofile_log_ex(ddp_mmp_get_events()->primary_display_switch_aod_mode,
+			MMPROFILE_FLAG_END, primary_display_cur_dst_mode, mode);
 	return ret;
 }
 
@@ -11001,6 +11433,7 @@ void primary_display_dynfps_chg_fps(int cfg_id)
 				pgc->plcm, last_dynfps, new_dynfps);
 	sendmode = params->sendmode;
 	DISPMSG("%s,need_send_cmd:%b in %s\n", __func__, need_send_cmd, sendmode);
+
 	if (fps_change_index & DYNFPS_DSI_MIPI_CLK ||
 		fps_change_index & DYNFPS_DSI_HFP) {
 
@@ -11060,7 +11493,7 @@ void primary_display_dynfps_chg_fps(int cfg_id)
 		cmdqRecFlushAsync(qhandle);
 		/*cmdqRecFlush(qhandle);*/
 
-	} else if (fps_change_index & DYNFPS_DSI_VFP) {
+	} else if ((fps_change_index & DYNFPS_DSI_VFP)) {
 
 		ret = cmdqRecCreate(
 		CMDQ_SCENARIO_DISP_ESD_CHECK, &qhandle);
@@ -11069,49 +11502,33 @@ void primary_display_dynfps_chg_fps(int cfg_id)
 			return;
 		}
 		cmdqRecReset(qhandle);
-#ifdef CONFIG_MTK_MT6382_BDG
-				cmdqRecWait(qhandle, CMDQ_EVENT_MUTEX0_STREAM_EOF);
 
-				/* stop dsi vdo mode */
-				dpmgr_path_build_cmdq(primary_get_dpmgr_handle(),
-						qhandle, CMDQ_STOP_VDO_MODE, 0);
-				ddp_dsi_dynfps_chg_fps(DISP_MODULE_DSI0, qhandle,
-						last_dynfps, new_dynfps, fps_change_index);
-
-				dpmgr_path_build_cmdq(primary_get_dpmgr_handle(), qhandle,
-						CMDQ_START_VDO_MODE, 0);
-				dpmgr_path_trigger(primary_get_dpmgr_handle(),
-						qhandle, CMDQ_ENABLE);
-
-				ddp_mutex_set_sof_wait(dpmgr_path_get_mutex(
-						primary_get_dpmgr_handle()), qhandle, 0);
-
-				cmdqRecFlush(qhandle);
-#else
 		if (need_send_cmd) {
 			cmdqRecWait(qhandle, CMDQ_EVENT_MUTEX0_STREAM_EOF);
 			DISPMSG("%s,send cmd to lcm in VFP solution\n", __func__);
 			disp_lcm_dynfps_send_cmd(pgc->plcm, qhandle,
 				last_dynfps, new_dynfps);
 		}
+
+		cmdqRecClearEventToken(qhandle,
+				CMDQ_EVENT_DISP_RDMA0_SOF);
+		cmdqRecWaitNoClear(
+			qhandle, CMDQ_EVENT_DISP_RDMA0_SOF);
 		/*now only primary display support*/
 		ddp_dsi_dynfps_chg_fps(DISP_MODULE_DSI0, qhandle,
 			last_dynfps, new_dynfps, fps_change_index);
-		cmdqRecFlushAsync(qhandle);
-#endif
-	} else if (need_send_cmd && (sendmode == LCM_SEND_IN_CMD)) {
-		struct cmdqRecStruct *qhandle2 = NULL;
-		ret = cmdqRecCreate(
-				CMDQ_SCENARIO_DISP_ESD_CHECK, &qhandle);
-		ret = cmdqRecCreate(
-				CMDQ_SCENARIO_DISP_ESD_CHECK, &qhandle2);
 
+		cmdqRecFlushAsync(qhandle);
+
+	} else if (need_send_cmd && (sendmode == LCM_SEND_IN_CMD)) {
+
+		ret = cmdqRecCreate(
+		CMDQ_SCENARIO_DISP_ESD_CHECK, &qhandle);
 		if (ret) {
 			DISPCHECK("%s,cmdq create fail!\n", __func__);
 			return;
 		}
 		cmdqRecReset(qhandle);
-		cmdqRecReset(qhandle2);
 
 		if (need_wait_esd_eof()) {
 			/* Wait esd config thread done. */
@@ -11120,34 +11537,31 @@ void primary_display_dynfps_chg_fps(int cfg_id)
 		}
 
 		if (need_send_cmd) {
-			cmdqRecWait(qhandle2, CMDQ_SYNC_TOKEN_CABC_EOF);
-			cmdqRecWait(qhandle2, CMDQ_SYNC_TOKEN_STREAM_EOF);
-			cmdqRecClearEventToken(qhandle2, CMDQ_SYNC_TOKEN_CONFIG_DIRTY);
-			cmdqRecFlush(qhandle2);
-#ifdef CONFIG_MTK_MT6382_BDG
-			mmprofile_log_ex(ddp_mmp_get_events()->primary_dynfps_chg_fps,
-							 MMPROFILE_FLAG_PULSE, 0, 1);
-			bdg_tx_wait_for_idle(DISP_BDG_DSI0);
-#endif
+			cmdqRecWait(qhandle, CMDQ_SYNC_TOKEN_CABC_EOF);
+			cmdqRecWait(qhandle, CMDQ_SYNC_TOKEN_STREAM_EOF);
+			cmdqRecClearEventToken(qhandle, CMDQ_SYNC_TOKEN_CONFIG_DIRTY);
+
 			DISPMSG("%s,send cmd to lcm in cmd mode\n", __func__);
 			disp_lcm_dynfps_send_cmd(pgc->plcm, qhandle,
-						last_dynfps, new_dynfps);
+				last_dynfps, new_dynfps);
 
 			cmdqRecSetEventToken(qhandle, CMDQ_SYNC_TOKEN_STREAM_EOF);
 			cmdqRecSetEventToken(qhandle, CMDQ_SYNC_TOKEN_CABC_EOF);
 			cmdqRecSetEventToken(qhandle, CMDQ_SYNC_TOKEN_CONFIG_DIRTY);
 		}
-		cmdqRecDestroy(qhandle2);
-		ddp_dsi_dynfps_chg_fps(DISP_MODULE_DSI0, qhandle,
-					last_dynfps, new_dynfps, fps_change_index);
 
-//		cmdqRecFlushAsync(qhandle);
-		cmdqRecFlush(qhandle);
+		cmdqRecClearEventToken(qhandle,
+				CMDQ_EVENT_DISP_RDMA0_SOF);
+		cmdqRecWaitNoClear(
+			qhandle, CMDQ_EVENT_DISP_RDMA0_SOF);
+		/*now only primary display support*/
+		ddp_dsi_dynfps_chg_fps(DISP_MODULE_DSI0, qhandle,
+			last_dynfps, new_dynfps, fps_change_index); //not work for cmd mode
+
+		cmdqRecFlushAsync(qhandle);
+
 	}
 	cmdqRecDestroy(qhandle);
-	mmprofile_log_ex(ddp_mmp_get_events()->primary_dynfps_chg_fps,
-					 MMPROFILE_FLAG_END, last_dynfps, new_dynfps);
-
 	/*3, inform fps go directly*/
 	disp_invoke_fps_chg_callbacks(new_dynfps / 100);
 
@@ -11187,4 +11601,755 @@ void _primary_display_fps_change_callback(void)
 /*-----------------DynFPS end-------------------------------*/
 #endif
 
+bool is_panel_backlight_on(void)
+{
+	LCM_DEBUG("%s: bl_brightness_hal=%d\n", __func__, bl_brightness_hal);
+	return bl_brightness_hal ? true : false;
+}
+EXPORT_SYMBOL(is_panel_backlight_on);
+
+
+void dsi_panel_update_hbm_aod_ud_fingerprint_for_tp(void)
+{
+	/*struct panel_ud_hbm_sync *ud_hbm_sync;*/
+	if(!bl_brightness_hal)
+		primary_display_vivo_SetMipiCmd_HS(0x02, HBM_UDFP_AOD_MODE_ON);
+	else
+		LCM_INFO("hbm is on don't set again\n");
+}
+EXPORT_SYMBOL(dsi_panel_update_hbm_aod_ud_fingerprint_for_tp);
+
+/**********************190413+ for lcm fbnode****************************/
+
+static ssize_t lcm_id_show(struct device *dev,
+						struct device_attribute *attr, char *buf)
+{
+	unsigned int lcm_id = 0;
+	lcm_id = mdss_report_lcm_id();
+	return sprintf(buf, "%02x\n", lcm_id);
+}
+
+#ifdef CONFIG_LCM_DRE_SUPPORT
+/*DRE enable check begin*/
+static ssize_t vivo_dre_check_enable_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%02x\n", vivo_dre_enable);
+}
+static ssize_t vivo_dre_check_enable_store(struct device *dev,
+						struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret, temp;
+	ret = kstrtoint(buf, 10, &temp);
+	if (ret) {
+		pr_err("Invalid input for lcm vivo_sre_check_enable_store\n");
+		/* return -EINVAL; */
+	}
+	vivo_dre_enable = temp;
+	if (vivo_dre_enable == 0)
+		disp_aal_set_dre_en(0);
+	else if (vivo_dre_enable == 1)
+		disp_aal_set_dre_en(1);
+	return count;
+}
+/*DRE enable check  end*/
+#endif
+
+static ssize_t vivo_colour_gamut_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%02x\n", vivo_colour_gamut);
+}
+
+static ssize_t vivo_colour_gamut_store(struct device *dev,
+						struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret, temp;
+	ret = kstrtoint(buf, 10, &temp);
+	if (ret) {
+		LCM_ERR("Invalid input for lcm vivo_colour_gamut_store\n");
+		/* return -EINVAL; */
+	}
+
+	vivo_colour_gamut = temp;
+	primary_display_vivo_SetMipiCmd_HS(0x09, vivo_colour_gamut);
+
+	return count;
+}
+/**************************lcmacl start****************************/
+static ssize_t oled_acl_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%02x\n", lcm_acl_status);
+}
+
+static ssize_t oled_acl_store(struct device *dev,
+						struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret, temp;
+	ret = kstrtoint(buf, 10, &temp);
+	if (ret) {
+		LCM_ERR("Invalid input for lcm cali\n");
+	}
+
+/*
+	if (lcmpr_debug_enabled == 0) {
+		LCM_INFO("not support ACL\n");
+		return count;
+	}
+*/
+	lcm_acl_status = temp;
+	LCM_INFO("vincent:read lcm_acl_status is %d\n", lcm_acl_status);
+
+	primary_display_vivo_SetMipiCmd_HS(0x01, lcm_acl_status);
+
+	return count;
+}
+/***************************lcmacl end****************************/
+
+/**************************oledhbm start****************************/
+struct hbm_context {
+	struct task_struct *hbm_task;
+	wait_queue_head_t wq;
+	unsigned int hbm_en;
+};
+
+static atomic_t hbm_control = ATOMIC_INIT(1);
+
+static int hbm_thread(void *data);
+
+static struct hbm_context *_get_ctx(void)
+{
+	static struct hbm_context *ctx;
+
+	if (ctx)
+		goto done;
+
+	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
+
+	init_waitqueue_head(&ctx->wq);
+	ctx->hbm_task = kthread_create(hbm_thread, NULL, "hbm_thread");
+	wake_up_process(ctx->hbm_task);
+
+done:
+	return ctx;
+}
+
+static int hbm_thread(void *data)
+{
+	struct hbm_context *ctx = _get_ctx();
+	disp_path_handle ph = primary_get_dpmgr_handle();
+
+	while (1) {
+		wait_event_interruptible(ctx->wq, atomic_read(&hbm_control));
+		atomic_set(&hbm_control, 0);
+
+		_primary_path_lock(__func__);
+
+		if (primary_get_state() != DISP_ALIVE) {
+			dpmgr_path_power_on(ph, CMDQ_DISABLE);
+			dpmgr_path_ioctl(ph, NULL, DDP_DSI_ENABLE_TE, NULL);
+		}
+
+		primary_display_set_lcm_hbm(ctx->hbm_en);
+		primary_display_hbm_wait(ctx->hbm_en);
+
+		if (primary_get_state() != DISP_ALIVE)
+			dpmgr_path_power_off(ph, CMDQ_DISABLE);
+
+		_primary_path_unlock(__func__);
+
+		if (kthread_should_stop())
+			break;
+	}
+
+	return 0;
+}
+
+static ssize_t oled_hbm_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	/****************************************
+	struct disp_lcm_handle *pl = primary_get_lcm();
+	int state;
+	state = disp_lcm_get_hbm_state(pl) ^ disp_lcm_get_hbm_wait(pl);
+	LCM_INFO("%s:state:%d,wait:%d,res:%d,  oled_hbm_status = %d\n", __func__,
+		disp_lcm_get_hbm_state(pl), disp_lcm_get_hbm_wait(pl), state, atomic_read(&oled_hbm_status));
+	****************************************/
+	return sprintf(buf, "%02x\n", atomic_read(&oled_hbm_status));
+}
+static ssize_t bk_lcm_ic_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%02x\n", 0);
+}
+static ssize_t oled_hbm_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret, next;
+
+	/********************
+	struct hbm_context *ctx = _get_ctx();
+	ctx->hbm_en = temp;
+	LCM_INFO("%s:hbm_en:%d\n", __func__, ctx->hbm_en);
+	atomic_set(&hbm_control, 1);
+	wake_up_interruptible(&ctx->wq);
+	******************/
+
+	ret = kstrtoint(buf, 10, &next);
+	if (ret) {
+		LCM_ERR("Invalid input for lcm hbm store\n");
+	}
+	mutex_lock(&hbm_lock);
+	ret = atomic_read(&oled_hbm_status);
+	mutex_unlock(&hbm_lock);
+	LCM_INFO("----prev hbm = %d,will set hbm = %d----bl level = %d to %d\n", ret, next, bl_brightness_hal, current_backlight);
+
+	if (next == ret) {
+		LCM_ERR("oled_hbm_status is already = %d, don't set again", ret);
+		return count;
+	}
+
+	if (next < HBM_USER_AUTO_MODE_LEVEL3) {
+		if ((ret == HBM_UDFP_RESUME_MODE_ON) || (ret == HBM_UDFP_AOD_MODE_ON)) {
+			LCM_INFO("Invalid status to turn on hbm to %d, keep current hbm = %d\n", next, ret);
+			return count;
+		}
+		if ((next >= HBM_USER_AUTO_MODE_LEVEL0) && (bl_brightness_hal < 2047)) {
+			LCM_INFO("Invalid status to turn on hbm to %d, because bl level is %d\n", next, bl_brightness_hal);
+			if (next >= HBM_USER_AUTO_MODE_LEVEL0)
+				atomic_set(&oled_hbm_status, next);
+			return count;
+		}
+	}
+
+	if (((next == HBM_UDFP_AOD_MODE_OFF) || (next == HBM_UDFP_AOD_MODE_ON))) {
+		if (current_backlight > 0) {
+			LCM_INFO("only support to set at aod mode\n");
+			return count;
+		}
+	}
+
+	primary_display_vivo_SetMipiCmd_HS(0x02, next);
+	return count;
+}
+
+/*show dimming speed  state*/
+static ssize_t dimming_speed_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%02x\n", oled_dimming_enable);
+}
+static ssize_t dimming_speed_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+
+
+	int ret, temp;
+
+	ret = kstrtoint(buf, 10, &temp);
+	if (ret) {
+		LCM_ERR("Invalid input for oled_dimming_enable store\n");
+	}
+
+	ret = atomic_read(&oled_hbm_status);
+	if ((ret == HBM_UDFP_RESUME_MODE_OFF) || (ret == HBM_USER_AUTO_MODE_LEVEL0) || (ret == HBM_UDFP_CALI_MODE_OFF)) {
+		oled_dimming_enable = temp;
+		primary_display_vivo_SetMipiCmd_HS(0x07, oled_dimming_enable);
+	}
+	return count;
+}
+
+static ssize_t weakup_hbmon_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%02x\n", oled_weakup_hbmon);
+}
+static ssize_t weakup_hbmon_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+
+
+	int ret, temp;
+
+	ret = kstrtoint(buf, 10, &temp);
+	if (ret) {
+		LCM_ERR("Invalid input for weakup_hbmon_store store\n");
+	}
+	/*set oled_weakup_hbmon by sf, not by finger print*/
+	LCM_INFO("set udfp = %d \n", temp);
+	return count;
+	oled_weakup_hbmon = temp;
+	return count;
+}
+static ssize_t mipi_dsireg_store(struct device *dev,
+						struct device_attribute *attr, const char *buf, size_t count)
+{
+	unsigned int value, len, i = 0;
+	char textBuf[PANEL_TX_MAX_BUF] = {0x0};
+	char *bufp;
+
+	len = count;
+	LCM_INFO("oled_alpmmode_store=> size:%d \n", len);
+
+	memcpy(textBuf, buf, len);
+
+	textBuf[len] = '\0';
+	bufp = textBuf;
+	bufp[NEXT_VALUE_OFFSET - 1] = 0;
+	while (kstrtouint(bufp, 16, &value) == 0) {
+		LCM_INFO("oled_alpmmode_store=> value:%d \n", value);
+		reg[i++] = value;
+		if (len >= PANEL_TX_MAX_BUF) {
+			LCM_ERR("oled_alpmmode_store=>wrong input reg len\n");
+			return -EFAULT;
+		}
+		bufp += NEXT_VALUE_OFFSET;
+		LCM_INFO("oled_alpmmode_store=> bufp0:%d \n", bufp[0]);
+		if ((bufp >= (textBuf + count)) || (bufp < textBuf)) {
+			pr_warn("%s,buffer out-of-bounds\n", __func__);
+			break;
+		}
+		/* End of a hex value in given string */
+		if ((bufp + NEXT_VALUE_OFFSET - 1) < (textBuf + count))
+			bufp[NEXT_VALUE_OFFSET - 1] = 0;
+		LCM_INFO("oled_alpmmode_store=> bufp1:%d \n", bufp[1]);
+	}
+
+	/*
+	for(i=0;i<len;i++)
+		LCM_INFO("oled_alpmmode_store=> textBuf[%d]:%d \n", i,textBuf[i]);
+	for(i=0;i<20;i++)
+		LCM_INFO("oled_alpmmode_store=> reg[%d]:%d \n", i,reg[i]);
+	*/
+
+	primary_display_vivo_SetMipiCmd_HS(0x05, 0x05);
+	return count;
+}
+#ifdef CONFIG_BBK_LCM_TEMPERATURE_COMPENSATION
+static void work_set_lcm_temperature_compensation(struct work_struct *work)
+{
+	static int last_temperature = 0xff;
+	if ((elvss_temperature <= -10) && (elvss_temperature >= -20)) {
+		if (last_temperature != 5) {
+			primary_display_vivo_SetMipiCmd_HS(0x06, 5);
+			last_temperature = 5;
+		}
+	} else if (elvss_temperature > -10) {
+		if (last_temperature != 0) {
+			primary_display_vivo_SetMipiCmd_HS(0x06, 0);
+			last_temperature = 0;
+		}
+	}
+}
+static ssize_t lcm_temperature_store(struct device *dev,
+						struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret, temp;
+
+	ret = kstrtoint(buf, 10, &temp);
+	if (ret) {
+		LCM_ERR("Invalid input for lcm_temperature_store\n");
+	}
+
+	LCM_INFO("lcm=> input for lcm_temperature_store:%d \n", temp);
+
+	set_lcm_temperature_compensation(temp);
+	return count;
+}
+#endif
+static ssize_t oled_alpmmode_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%02x\n", oled_alpm_state);
+}
+static ssize_t oled_alpmmode_store(struct device *dev,
+						struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret, temp;
+
+	ret = kstrtoint(buf, 10, &temp);
+	if (ret) {
+		LCM_ERR("Invalid input for oled_alpmmode_store\n");
+	}
+	/*
+	if(panel_lpm_power_state == MDSS_PANEL_POWER_OFF || panel_lpm_power_state == MDSS_PANEL_POWER_ON || doze_mode_state == 0)
+	{
+		LCM_INFO("Invalid mode input for oled_alpmmode_store\n");
+		return 0;
+	}
+	*/
+	LCM_INFO("lcmaod=> input for oled_alpmmode_store:%d \n", oled_alpm_state);
+	oled_alpm_state = temp;
+
+	/*oled_alpm_state:true is for alpm_hbrightness_on_cmds, false is fo alpm_lbrightness_on_cmds*/
+	primary_display_vivo_SetMipiCmd_HS(0x03, oled_alpm_state);
+	return count;
+}
+
+static ssize_t oled_hlpmmode_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%02x\n", oled_hlpm_state);
+}
+static ssize_t oled_hlpmmode_store(struct device *dev,
+						struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret, temp;
+	extern struct mutex fb_pow_mod_lock;
+
+	ret = kstrtoint(buf, 10, &temp);
+	if (ret) {
+		LCM_ERR("Invalid input for oled_hlpmmode_store\n");
+	}
+	/*
+	if(panel_lpm_power_state == MDSS_PANEL_POWER_OFF || panel_lpm_power_state == MDSS_PANEL_POWER_ON || doze_mode_state == 0)
+	{
+		LCM_ERR("Invalid mode input for oled_hlpmmode_store\n");
+		return 0;
+	}
+	*/
+
+	oled_hlpm_state = temp;
+	LCM_INFO(" input for oled_hlpmmode_store %d\n", oled_hlpm_state);
+
+
+	mutex_lock(&fb_pow_mod_lock);
+	/*oled_hlpm_state:true is for alpm_hbrightness_on_cmds, false is fo alpm_lbrightness_on_cmds*/
+	if (primary_display_get_power_mode() == DOZE) {
+		LCM_INFO(" oled_hlpmmode_store doze set %d\n", oled_hlpm_state);
+		primary_display_vivo_SetMipiCmd_HS(0x04, oled_hlpm_state);
+	} else if (primary_display_get_power_mode() == DOZE_SUSPEND) {
+		LCM_INFO(" oled_hlpmmode_store doze_suspend set %d\n", oled_hlpm_state);
+		/*mutex_lock(&lcm_power_aod_lock);*/
+		disp_helper_set_option(DISP_OPT_USE_CMDQ, 0);
+		disp_helper_set_option(DISP_OPT_SHARE_SRAM, 0);
+
+		primary_display_set_power_mode(DOZE);
+		primary_display_resume();
+		/*debug_print_power_mode_check(DOZE_SUSPEND, DOZE);*/
+
+		cmdqRecReset(pgc->cmdq_handle_trigger);
+		cmdqRecStartLoop(pgc->cmdq_handle_trigger);
+		cmdqCoreSetEvent(CMDQ_SYNC_TOKEN_STREAM_EOF);
+		cmdqCoreSetEvent(CMDQ_SYNC_TOKEN_CABC_EOF);
+
+		primary_display_vivo_SetMipiCmd_HS(0x04, oled_hlpm_state);
+
+		primary_display_set_power_mode(DOZE_SUSPEND);
+		ret = primary_display_suspend();
+		/*debug_print_power_mode_check(DOZE, DOZE_SUSPEND);*/
+
+		cmdqRecStopLoop(pgc->cmdq_handle_trigger);
+		disp_helper_set_option(DISP_OPT_USE_CMDQ, 1);
+		disp_helper_set_option(DISP_OPT_SHARE_SRAM, 1);
+
+		/*mutex_unlock(&lcm_power_aod_lock);*/
+		if (ret < 0)
+			LCM_ERR(" oled_hlpmmode_store:failed to set DOZE_SUSPEND to doze\n");
+	}
+	mutex_unlock(&fb_pow_mod_lock);
+
+	return count;
+}
+
+struct aod_set_data g_aod_data;
+#include "../../../lcm/pd2078_samsung_s6e8fc1_fhdp_vdo/vivo_smart_aod.h"
+/*vivo add for smart aod start*/
+static bool aod_area_check(unsigned int area_id, unsigned int depth, unsigned int x_start, unsigned int y_start, unsigned int width, unsigned int height)
+{
+
+	if (area_id < 0 || area_id > 5) {
+		LCM_ERR("area_id is illegal, area_id is : %u\n", area_id);
+		return false;
+	}
+
+	if ((x_start-1) % 4) {
+		LCM_ERR("byte unaligned, x_start is : %u\n", x_start);
+		return false;
+	}
+
+	if (width % 96) {
+		LCM_ERR("byte unaligned, width is : %u\n", width);
+		return false;
+	}
+
+	if (!(depth == 1 || depth == 2 || depth == 4 || depth == 8)) {
+		LCM_ERR("color depth is illegal, depth is :%u\n ", depth);
+		return false;
+		}
+
+	if (x_start + width > 1080 || y_start + height > 2400) {
+		LCM_ERR("oversized\n");
+		return false;
+		}
+
+	return true;
+}
+static ssize_t aod_disp_info_store(struct device *dev,
+						struct device_attribute *attr, const char *buf, size_t count)
+{
+
+	struct aod_set_data *aod_data = &g_aod_data;
+	unsigned int depth, x_start, y_start, width, height;
+	int i, ret, area_id;
+	const char *start = buf;
+	bool is_change = false;
+
+	if (!aod_data->aod_area_support) {
+		LCM_ERR(" not support aod area setting\n");
+		goto out_unlock;
+	}
+
+#define SET_AOD_PARAM(_aod, _id, _name, _v) \
+	do { \
+		if (_aod->area[_id]._name != _v) { \
+			_aod->area[_id]._name = _v; \
+			is_change = true; \
+		} \
+	} while (0)
+	
+	for (i = 0; i < AOD_MAX_AREA_NUM; i++) {
+		ret = sscanf(start, "%u %u %u %u %u %u", &area_id, &depth, &x_start, &y_start, &width, &height);
+		if (ret < 0) {
+			LCM_ERR("read failed\n");
+			goto out_unlock;
+		}
+
+		if (!aod_area_check(area_id, depth, x_start, y_start, width, height)) {
+			LCM_ERR("area parameters invaild\n");
+			goto out_unlock;
+		}
+
+		LCM_INFO("%u : [%u %u %u %u %u]\n", area_id, depth,  x_start, y_start, width, height);
+
+		SET_AOD_PARAM(aod_data, area_id, enable, 1);
+		SET_AOD_PARAM(aod_data, area_id, area_id, area_id);
+		SET_AOD_PARAM(aod_data, area_id, x_start, x_start);
+		SET_AOD_PARAM(aod_data, area_id, y_start, y_start);
+		SET_AOD_PARAM(aod_data, area_id, width, width);
+		SET_AOD_PARAM(aod_data, area_id, height, height);
+		SET_AOD_PARAM(aod_data, area_id, depth_bit, depth);
+
+		start = strchr(start, ',');
+		if (start)
+			start += 1;
+		else
+			break;
+	}
+
+	/* clear other area except fingerprint area */
+	while (++i < AOD_MAX_AREA_NUM - 1) {
+		SET_AOD_PARAM(aod_data, i, enable, 0);
+	}
+
+	if (is_change) {
+		atomic_set(&smart_aod_update,1);
+		LCM_DEBUG("is_change\n");
+	}
+	else
+		LCM_INFO("no update smart aod for no change\n");
+
+out_unlock:
+	return count;
+}
+
+static ssize_t aod_disp_info_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	ssize_t count = 0;
+	int i = 0;
+
+	for  (i == 0; i < 6; i++) {
+		if (g_aod_data.area[i].enable)
+			count += snprintf(buf + count, PAGE_SIZE, "[%d] %dbit ( %d %d %d %d )\n", g_aod_data.area[i].area_id, g_aod_data.area[i].depth_bit, g_aod_data.area[i].x_start, g_aod_data.area[i].y_start, g_aod_data.area[i].width, g_aod_data.area[i].height);
+	}
+	return count;
+}
+
+/*vivo add for smart aod end */
+
+
+/*SRE enable check begin*/
+static ssize_t vivo_sre_check_enable_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%02x\n", vivo_sre_enable);
+}
+static ssize_t vivo_sre_check_enable_store(struct device *dev,
+						struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret, temp;
+	ret = kstrtoint(buf, 10, &temp);
+	if (ret) {
+		pr_err("Invalid input for lcm vivo_sre_check_enable_store\n");
+		/* return -EINVAL; */
+	}
+	vivo_sre_enable = temp;
+	return count;
+}
+/*SRE enable check  end*/
+/*ESS enable check begin*/
+static ssize_t vivo_ess_check_enable_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%02x\n", vivo_ess_enable);
+}
+static ssize_t vivo_ess_check_enable_store(struct device *dev,
+						struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret, temp;
+	ret = kstrtoint(buf, 10, &temp);
+	if (ret) {
+		pr_err("Invalid input for lcm vivo_sre_check_enable_store\n");
+		/* return -EINVAL; */
+	}
+	vivo_ess_enable = temp;
+	if (vivo_ess_enable == 0)
+		disp_aal_set_ess_en(0);
+	else if (vivo_ess_enable == 1)
+		disp_aal_set_ess_en(1);
+	return count;
+}
+/*ESS enable check  end*/
+
+static ssize_t vivo_ess_level_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%02x\n", vivo_ess_level);
+}
+
+static ssize_t vivo_ess_level_store(struct device *dev,
+						struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret, temp;
+	int mtk_ess_level = 0;
+	ret = kstrtoint(buf, 10, &temp);
+	if (ret || temp < 0 || temp > 3) {
+		pr_err("Invalid input for lcm vivo_ess_level_store\n");
+		return -EINVAL;
+	}
+
+	vivo_ess_level = temp;
+	if (temp == 0)
+		mtk_ess_level = 0;
+	else if (temp == 1)
+		mtk_ess_level = 60;
+	else if (temp == 2)
+		mtk_ess_level = 86;
+	else if (temp == 3)
+		mtk_ess_level = 140;
+	else {
+		pr_err("Invalid level: temp=%d\n", temp);
+		return -EINVAL;
+	}
+
+	LCM_INFO("vivo set mtk ess level %d (%d)\n", vivo_ess_level, mtk_ess_level);
+	disp_aal_set_ess_level(mtk_ess_level);
+
+	return count;
+}
+
+static DEVICE_ATTR(lcm_id, 0444, lcm_id_show, NULL);
+#ifdef CONFIG_LCM_DRE_SUPPORT
+static DEVICE_ATTR(dre_enable, 0644, vivo_dre_check_enable_show, vivo_dre_check_enable_store);
+#endif
+static DEVICE_ATTR(sre_enable, 0644, vivo_sre_check_enable_show, vivo_sre_check_enable_store);
+static DEVICE_ATTR(ess_enable, 0644, vivo_ess_check_enable_show, vivo_ess_check_enable_store);
+static DEVICE_ATTR(aod_disp_info, 0644, aod_disp_info_show, aod_disp_info_store);
+static DEVICE_ATTR(ess_level, 0644, vivo_ess_level_show, vivo_ess_level_store);
+static DEVICE_ATTR(colour_gamut, 0644, vivo_colour_gamut_show, vivo_colour_gamut_store);
+static DEVICE_ATTR(oled_acl, 0644, oled_acl_show, oled_acl_store);
+static DEVICE_ATTR(oled_hbm, 0644, oled_hbm_show, oled_hbm_store);
+static DEVICE_ATTR(bk_lcm_ic, 0644, bk_lcm_ic_show, NULL);
+static DEVICE_ATTR(dimming_speed, 0644, dimming_speed_show, dimming_speed_store);
+static DEVICE_ATTR(weakup_hbmon, 0644, weakup_hbmon_show, weakup_hbmon_store);
+static DEVICE_ATTR(oled_alpmmode, 0644, oled_alpmmode_show, oled_alpmmode_store);
+static DEVICE_ATTR(oled_hlpmmode, 0644, oled_hlpmmode_show, oled_hlpmmode_store);
+static DEVICE_ATTR(mipi_dsireg, 0644, NULL, mipi_dsireg_store);
+#ifdef CONFIG_BBK_LCM_TEMPERATURE_COMPENSATION
+static DEVICE_ATTR(lcm_temperature, 0644, NULL, lcm_temperature_store);
+#endif
+
+static struct attribute *disp_lcm_sys_attrs[] = {
+	&dev_attr_lcm_id.attr,
+#ifdef CONFIG_LCM_DRE_SUPPORT
+	&dev_attr_dre_enable.attr,
+#endif
+	&dev_attr_sre_enable.attr,
+	&dev_attr_ess_enable.attr,
+	&dev_attr_ess_level.attr,
+	&dev_attr_aod_disp_info.attr,
+	&dev_attr_colour_gamut.attr,
+	&dev_attr_oled_acl.attr,
+	&dev_attr_oled_hbm.attr,
+	&dev_attr_bk_lcm_ic.attr,
+	&dev_attr_dimming_speed.attr,
+	&dev_attr_weakup_hbmon.attr,
+	&dev_attr_oled_alpmmode.attr,
+	&dev_attr_oled_hlpmmode.attr,
+	&dev_attr_mipi_dsireg.attr,
+#ifdef CONFIG_BBK_LCM_TEMPERATURE_COMPENSATION
+	&dev_attr_lcm_temperature.attr,
+#endif
+	NULL
+};
+
+static ssize_t disp_lcm_object_show(struct kobject *k, struct attribute *attr, char *buf)
+{
+	struct kobj_attribute *kobj_attr;
+	int ret = -EIO;
+
+	kobj_attr = container_of(attr, struct kobj_attribute, attr);
+
+	if (kobj_attr->show)
+		ret = kobj_attr->show(k, kobj_attr, buf);
+
+	return ret;
+}
+
+static ssize_t disp_lcm_object_store(struct kobject *k, struct attribute *attr,
+			      const char *buf, size_t count)
+{
+	struct kobj_attribute *kobj_attr;
+	int ret = -EIO;
+
+	kobj_attr = container_of(attr, struct kobj_attribute, attr);
+
+	if (kobj_attr->store)
+		ret = kobj_attr->store(k, kobj_attr, buf, count);
+
+	return ret;
+}
+
+static void disp_lcm_object_release(struct kobject *kobj)
+{
+	/* nothing to do temply */
+	return;
+}
+
+static const struct sysfs_ops disp_lcm_object_sysfs_ops = {
+	.show = disp_lcm_object_show,
+	.store = disp_lcm_object_store,
+};
+
+static struct kobj_type disp_lcm_object_type = {
+	.sysfs_ops	= &disp_lcm_object_sysfs_ops,
+	.release	= disp_lcm_object_release,
+	.default_attrs = disp_lcm_sys_attrs,
+};
+
+static int disp_creat_sys_file(void)
+{
+	memset(&disp_kobject, 0x00, sizeof(disp_kobject));
+
+	if (kobject_init_and_add(&disp_kobject, &disp_lcm_object_type, NULL, "lcm")) {
+		kobject_put(&disp_kobject);
+		return -ENOMEM;
+	}
+	kobject_uevent(&disp_kobject, KOBJ_ADD);
+	return 0;
+}
+
+unsigned int mdss_report_lcm_id(void)
+{
+	int report_lcm_id = 0xff;
+	if (!strcmp(project_name, "PD2078F_EX")) {
+		LCM_INFO("project_name:%s  lcm_software_id:%d\n",project_name,lcm_software_id);
+		if(lcm_software_id == 0x41 || lcm_software_id == 0x4e)
+			return 0x22;
+		else if (lcm_software_id == 0x4F)
+			return 0x23;
+		else 
+			return 0xFF;
+	} 
+	return report_lcm_id;
+}
+
+
+EXPORT_SYMBOL(mdss_report_lcm_id);
 

@@ -24,7 +24,7 @@
 #ifdef CONFIG_MTK_M4U
 #include "m4u.h"
 #endif
-#include "../../../sync/mtk_sync.h"
+#include "mtk_sync.h"
 #include "debug.h"
 #include "ddp_ovl.h"
 #include "mtkfb_fence.h"
@@ -395,7 +395,7 @@ static void mtkfb_ion_free_handle(struct ion_client *client,
 static size_t mtkfb_ion_phys_mmu_addr(struct ion_client *client,
 	struct ion_handle *handle, unsigned int *mva, int type)
 {
-	size_t size = 0;
+	size_t size;
 	ion_phys_addr_t phy_addr = 0;
 	struct ion_mm_data mm_data;
 
@@ -1537,31 +1537,3 @@ int disp_sync_get_debug_info(char *stringbuf, int buf_len)
 
 	return len;
 }
-
-struct ion_handle *disp_snyc_get_ion_handle(unsigned int session_id,
-	unsigned int timeline_id, unsigned int idx)
-{
-	struct mtkfb_fence_buf_info *buf = NULL;
-	struct disp_sync_info *layer_info = NULL;
-	struct ion_handle *handle = NULL;
-
-	layer_info = _get_sync_info(session_id, timeline_id);
-	if (layer_info == NULL) {
-		DISPERR("layer_info is null, layer_info=%p\n", layer_info);
-		return 0;
-	}
-
-	mutex_lock(&layer_info->sync_lock);
-	list_for_each_entry(buf, &layer_info->buf_list, list) {
-		if (buf->idx == idx) {
-			/* use local variable here to avoid polluted pointer */
-			handle = buf->hnd;
-			DISPMSG("%s, get handle", __func__);
-			break;
-		}
-	}
-	mutex_unlock(&layer_info->sync_lock);
-
-	return handle;
-}
-

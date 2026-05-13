@@ -22,19 +22,32 @@ static struct pinctrl *this_pctrl; /* static pinctrl instance */
 
 /* DTS state mapping name */
 static const char *this_state_name[DTS_GPIO_STATE_MAX] = {
+#ifdef CONFIG_LCM_PANEL_TYPE_TFT
+	"tft_rst_out0_gpio",
+	"tft_rst_out1_gpio",
+	"tft_enp_en0_gpio",
+	"tft_enp_en1_gpio",
+	"tft_enn_en0_gpio",
+	"tft_enn_en1_gpio",
+	"tft_bkg_en0_gpio",
+	"tft_bkg_en1_gpio",
+	"tft_tprst_en0_gpio",
+	"tft_tprst_en1_gpio",	
+#else
 	"mode_te_gpio",
 	"mode_te_te",
 	"mode_te1_te",
 	"lcm_rst_out0_gpio",
 	"lcm_rst_out1_gpio",
+	"lcm_vci_out0_gpio",
+	"lcm_vci_out1_gpio",
 	"lcm1_rst_out0_gpio",
 	"lcm1_rst_out1_gpio",
 	"lcd_bias_enp0_gpio",
 	"lcd_bias_enp1_gpio",
 	"tp_rst_out1_gpio",
-	"tp_rst_out0_gpio",
-	"6382_rst_out1_gpio",
-	"6382_rst_out0_gpio"
+	"tp_rst_out0_gpio"
+#endif
 };
 
 /* pinctrl implementation */

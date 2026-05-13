@@ -108,7 +108,14 @@ static const struct timeval FRAME_INTERVAL = { 0, 30000 };	/* 33ms */
 static bool no_update;
 static struct disp_session_input_config session_input;
 long dts_gpio_state;
+DEFINE_MUTEX(fb_pow_mod_lock);
 
+struct workqueue_struct *fingerprint_workq;
+struct delayed_work fingerprint_notify_work;
+int fingershooter_status;
+atomic_t after_shooter_count;
+int notify_udfp_cyan_jiffies;
+int notify_udfp_cyan_make_sure_delay;
 /* macro definiton */
 #define ALIGN_TO(x, n)  (((x) + ((n) - 1)) & ~((n) - 1))
 #define MTK_FB_XRESV (ALIGN_TO(MTK_FB_XRES, MTK_FB_ALIGNMENT))
@@ -184,6 +191,7 @@ unsigned int need_esd_check;
 unsigned int lcd_fps = 6000;
 wait_queue_head_t screen_update_wq;
 char mtkfb_lcm_name[256] = { 0 };
+char project_name[256] = { 0 };
 #if defined(CONFIG_MTK_DUAL_DISPLAY_SUPPORT) && \
 	(CONFIG_MTK_DUAL_DISPLAY_SUPPORT == 2)
 struct fb_info *ext_mtkfb_fb;
@@ -282,7 +290,7 @@ static int mtkfb1_blank(int blank_mode, struct fb_info *info)
 static int mtkfb_blank(int blank_mode, struct fb_info *info)
 {
 	enum mtkfb_power_mode prev_pm = primary_display_get_power_mode();
-	DISPDBG("%s, blank_mode=%d\n", __func__, blank_mode);
+
 	switch (blank_mode) {
 	case FB_BLANK_UNBLANK:
 	case FB_BLANK_NORMAL:
@@ -293,10 +301,12 @@ static int mtkfb_blank(int blank_mode, struct fb_info *info)
 			break;
 		}
 
+		mutex_lock(&fb_pow_mod_lock);
 		primary_display_set_power_mode(FB_RESUME);
 		mtkfb_late_resume();
 
 		debug_print_power_mode_check(prev_pm, FB_RESUME);
+		mutex_unlock(&fb_pow_mod_lock);
 		break;
 	case FB_BLANK_VSYNC_SUSPEND:
 	case FB_BLANK_HSYNC_SUSPEND:
@@ -309,11 +319,18 @@ static int mtkfb_blank(int blank_mode, struct fb_info *info)
 			break;
 		}
 
+		mutex_lock(&fb_pow_mod_lock);
+		if (primary_display_is_sleepd() &&
+			primary_display_get_lcm_power_state() == LCM_ON_LOW_POWER) {
+			primary_display_set_power_mode(FB_RESUME);
+			primary_display_resume();
+			debug_print_power_mode_check(prev_pm, FB_RESUME);
+		}
 		primary_display_set_power_mode(FB_SUSPEND);
 		mtkfb_early_suspend();
 
 		debug_print_power_mode_check(prev_pm, FB_SUSPEND);
-
+		mutex_unlock(&fb_pow_mod_lock);
 		break;
 	default:
 		return -EINVAL;
@@ -964,7 +981,7 @@ unsigned int mtkfb_fm_auto_test(void)
 	}
 
 	if (idle_state_backup) {
-		primary_display_idlemgr_kick(__func__, 1);
+		primary_display_idlemgr_kick(__func__, 0);
 		enable_idlemgr(0);
 	}
 
@@ -1000,7 +1017,6 @@ unsigned int mtkfb_fm_auto_test(void)
 	mtkfb_pan_display_impl(&mtkfb_fbi->var, mtkfb_fbi);
 	msleep(100);
 
-	primary_display_idlemgr_kick(__func__, 1);
 	result = primary_display_lcm_ATA();
 
 	if (idle_state_backup)
@@ -1019,10 +1035,10 @@ int mtkfb_aod_mode_switch(enum mtkfb_aod_power_mode aod_pm)
 	int ret = 0;
 	enum mtkfb_power_mode prev_pm = primary_display_get_power_mode();
 
-	DISPCHECK("AOD: ioctl: %s\n",
+	LCM_INFO("AOD: ioctl: %s\n",
 		aod_pm ? "AOD_DOZE_SUSPEND" : "AOD_DOZE");
 	if (!primary_is_aod_supported()) {
-		DISPCHECK("AOD: feature not support\n");
+		LCM_INFO("AOD: feature not support\n");
 		return ret;
 	}
 
@@ -1031,6 +1047,7 @@ int mtkfb_aod_mode_switch(enum mtkfb_aod_power_mode aod_pm)
 		 * First DOZE to power on dispsys and LCM(low power mode);
 		 * then DOZE_SUSPEND to power off dispsys.
 		 */
+		mutex_lock(&fb_pow_mod_lock);
 		if (primary_display_is_sleepd() &&
 			primary_display_get_lcm_power_state()) {
 			primary_display_set_power_mode(DOZE);
@@ -1043,11 +1060,13 @@ int mtkfb_aod_mode_switch(enum mtkfb_aod_power_mode aod_pm)
 		ret = primary_display_suspend();
 
 		debug_print_power_mode_check(prev_pm, DOZE_SUSPEND);
+		mutex_unlock(&fb_pow_mod_lock);
 	} else if (aod_pm == MTKFB_AOD_DOZE) {
-		primary_display_set_power_mode(DOZE);
-		ret = primary_display_resume();
-
-		debug_print_power_mode_check(prev_pm, DOZE);
+			mutex_lock(&fb_pow_mod_lock);
+			primary_display_set_power_mode(DOZE);
+			ret = primary_display_resume();
+			debug_print_power_mode_check(prev_pm, DOZE);
+			mutex_unlock(&fb_pow_mod_lock);
 	} else {
 		DISP_PR_ERR("AOD: error: unknown AOD power mode %d\n", aod_pm);
 	}
@@ -2055,6 +2074,10 @@ struct tag_videolfb {
 	u32 islcmfound;
 	u32 fps;
 	u32 vram;
+	u32 lcm_software_id;
+	u32 lcm_especial_id;
+	u32 silent_reboot;  /* add for silent reboot */
+	u32 lcm_ldo_vision;
 	char lcmname[1];	/* this is the minimum size */
 };
 
@@ -2082,6 +2105,10 @@ unsigned int ext_vramsize;
 phys_addr_t ext_fb_base;
 #endif
 
+unsigned int lcm_software_id = 0xff;
+unsigned int lcm_especial_id;
+unsigned int silent_reboot;
+unsigned int lcm_ldo_vision;
 static int __parse_tag_videolfb_extra(struct device_node *node)
 {
 	void *prop;
@@ -2149,15 +2176,78 @@ int __parse_tag_videolfb(struct device_node *node)
 {
 	struct tag_videolfb *videolfb_tag = NULL;
 	unsigned long size = 0;
-
+	void *prop;
+	prop = (void *)of_get_property(node,
+		"atag,videolfb-project-name", (int *)&size);
+	if (!prop)
+		LCM_ERR("[DT][videolfb] project_name parse failed\n");
+	else {
+		strncpy((char *)project_name, prop, sizeof(project_name));
+		project_name[size] = '\0';
+		LCM_INFO("[DT][videolfb] project_name    = %s\n",
+			project_name);
+	}
 	videolfb_tag = (struct tag_videolfb *)
 			of_get_property(node, "atag,videolfb", (int *)&size);
 	if (videolfb_tag) {
 		memset((void *)mtkfb_lcm_name, 0, sizeof(mtkfb_lcm_name));
-		strncpy((char *)mtkfb_lcm_name, videolfb_tag->lcmname,
-			sizeof(mtkfb_lcm_name));
+		strncpy((char *)mtkfb_lcm_name, videolfb_tag->lcmname,sizeof(mtkfb_lcm_name));
 		mtkfb_lcm_name[strlen(videolfb_tag->lcmname)] = '\0';
 
+		LCM_INFO("[DT][videolfb] mtkfb lcm name orignal find %s\n", mtkfb_lcm_name);
+		if (!strcmp(project_name, "PD2079F_EX")) {
+			if (!strcmp(mtkfb_lcm_name, "pd2062_samsung_s6e3fc3_fhdp_cmd90hz_lcm_drv")
+				|| !strcmp(mtkfb_lcm_name, "pd2062_ams644_s6e3fc2_fhdp_cmd60_lcm_drv"))
+				LCM_INFO("[DT][videolfb] mtkfb lcm name match succeed\n");
+			else {
+				memset((void *)mtkfb_lcm_name, 0, sizeof(mtkfb_lcm_name));
+				lcm_software_id = videolfb_tag->lcm_software_id;
+				if (lcm_software_id == 0x4E || lcm_software_id == 0x4F) {
+					strncpy((char *)mtkfb_lcm_name, "pd2062_samsung_s6e3fc3_fhdp_cmd90hz_lcm_drv",
+					sizeof("pd2062_samsung_s6e3fc3_fhdp_cmd90hz_lcm_drv"));
+					mtkfb_lcm_name[strlen("pd2062_samsung_s6e3fc3_fhdp_cmd90hz_lcm_drv")] = '\0';
+				} else if (lcm_software_id == 0x40 || lcm_software_id == 0x6E) {
+					strncpy((char *)mtkfb_lcm_name, "pd2062_ams644_s6e3fc2_fhdp_cmd60_lcm_drv",
+					sizeof("pd2062_ams644_s6e3fc2_fhdp_cmd60_lcm_drv"));
+					mtkfb_lcm_name[strlen("pd2062_ams644_s6e3fc2_fhdp_cmd60_lcm_drv")] = '\0';
+
+				} else {
+					strncpy((char *)mtkfb_lcm_name, "pd2062_samsung_s6e3fc3_fhdp_cmd90hz_lcm_drv",
+						sizeof("pd2062_samsung_s6e3fc3_fhdp_cmd90hz_lcm_drv"));
+					mtkfb_lcm_name[strlen("pd2062_samsung_s6e3fc3_fhdp_cmd90hz_lcm_drv")] = '\0';
+				}
+				LCM_INFO("[DT][videolfb] mtkfb lcm name mismatch ,we used default lcm drver %s, id = 0x%x\n", mtkfb_lcm_name, lcm_software_id);
+			}
+		} else if (!strcmp(project_name, "PD2078F_EX")) {
+			if (!strcmp(mtkfb_lcm_name, "pd2062_samsung_s6e3fc3_fhdp_cmd90hz_lcm_drv")
+				|| !strcmp(mtkfb_lcm_name, "pd2062_ams644_s6e3fc2_fhdp_cmd60_lcm_drv")
+				|| !strcmp(mtkfb_lcm_name, "pd2078_samsung_s6e8fc1_fhdp_vdo_lcm_drv"))
+				LCM_INFO("[DT][videolfb] mtkfb lcm name match succeed\n");
+			else {
+				memset((void *)mtkfb_lcm_name, 0, sizeof(mtkfb_lcm_name));
+				lcm_software_id = videolfb_tag->lcm_software_id;
+				if (lcm_software_id == 0x4F) {
+					strncpy((char *)mtkfb_lcm_name, "pd2062_samsung_s6e3fc3_fhdp_cmd90hz_lcm_drv",
+					sizeof("pd2062_samsung_s6e3fc3_fhdp_cmd90hz_lcm_drv"));
+					mtkfb_lcm_name[strlen("pd2062_samsung_s6e3fc3_fhdp_cmd90hz_lcm_drv")] = '\0';
+				} else if (lcm_software_id == 0x40 || lcm_software_id == 0x6E) {
+					strncpy((char *)mtkfb_lcm_name, "pd2062_ams644_s6e3fc2_fhdp_cmd60_lcm_drv",
+					sizeof("pd2062_ams644_s6e3fc2_fhdp_cmd60_lcm_drv"));
+					mtkfb_lcm_name[strlen("pd2062_ams644_s6e3fc2_fhdp_cmd60_lcm_drv")] = '\0';
+				} else if (lcm_software_id == 0x4E || lcm_software_id == 0x41) {
+					strncpy((char *)mtkfb_lcm_name, "pd2078_samsung_s6e8fc1_fhdp_vdo_lcm_drv",
+					sizeof("pd2078_samsung_s6e8fc1_fhdp_vdo_lcm_drv"));
+					mtkfb_lcm_name[strlen("pd2078_samsung_s6e8fc1_fhdp_vdo_lcm_drv")] = '\0';
+				} else {
+					strncpy((char *)mtkfb_lcm_name, "pd2078_samsung_s6e8fc1_fhdp_vdo_lcm_drv",
+						sizeof("pd2078_samsung_s6e8fc1_fhdp_vdo_lcm_drv"));
+					mtkfb_lcm_name[strlen("pd2078_samsung_s6e8fc1_fhdp_vdo_lcm_drv")] = '\0';
+				}
+				LCM_INFO("[DT][videolfb] mtkfb lcm name mismatch ,we used default lcm drver %s, id = 0x%x\n", mtkfb_lcm_name, lcm_software_id);
+			}
+		} else {
+			LCM_ERR("project_name is null,check dts node chosen \n");
+		}
 		lcd_fps = videolfb_tag->fps;
 		if (lcd_fps == 0)
 			lcd_fps = 6000;
@@ -2165,9 +2255,15 @@ int __parse_tag_videolfb(struct device_node *node)
 		islcmconnected = videolfb_tag->islcmfound;
 		vramsize = videolfb_tag->vram;
 		fb_base = videolfb_tag->fb_base;
+		lcm_software_id = videolfb_tag->lcm_software_id;
+		lcm_especial_id = videolfb_tag->lcm_especial_id;
+		silent_reboot = videolfb_tag->silent_reboot;
+		lcm_ldo_vision = videolfb_tag->lcm_ldo_vision;
 		is_lcm_inited = 1;
-
+		printk("[DT][videolfb] lcm name:%s \n",mtkfb_lcm_name);
 		return 0;
+	} else {
+		LCM_ERR("[DT][videolfb] videolfb_tag is null\n");
 	}
 
 	DISPCHECK("[DT][videolfb] videolfb_tag not found\n");
@@ -2252,9 +2348,12 @@ found:
 		(unsigned long)fb_base);
 	DISPCHECK("[DT][videolfb] vram       = 0x%x (%d)\n",
 		vramsize, vramsize);
-	DISPCHECK("[DT][videolfb] lcmname    = %s\n",
-		mtkfb_lcm_name);
-
+	DISPCHECK("[DT][videolfb] lcmname    = %s\n", mtkfb_lcm_name);
+	DISPCHECK("[DT][videolfb] lcm_software_id       = %d\n", lcm_software_id);
+	DISPCHECK("[DT][videolfb] lcm_especial_id       = %d\n", lcm_especial_id);
+	DISPCHECK("[DT][videolfb] silent_reboot       = %d\n", silent_reboot);
+	DISPCHECK("[DT][videolfb] lcm_ldo_vision		 = 0x%x\n",
+		lcm_ldo_vision);
 #if defined(CONFIG_MTK_DUAL_DISPLAY_SUPPORT) && \
 	(CONFIG_MTK_DUAL_DISPLAY_SUPPORT == 2)
 	DISPCHECK("[DT][videolfb] ext_islcmfound = %d\n",
@@ -2401,6 +2500,70 @@ static struct fb_info *allocate_fb_by_index(struct device *dev)
 }
 #endif
 
+
+static int get_notify_udfp_cyan_delay_jiffies()
+{
+	u64 away_jiffies;
+	unsigned int away_ms;
+	int ret;
+
+	away_jiffies = get_jiffies_64() - notify_udfp_cyan_jiffies;
+	away_ms = jiffies64_to_nsecs(away_jiffies) / 1000/1000;
+
+	if (away_ms < notify_udfp_cyan_make_sure_delay)
+		ret = __msecs_to_jiffies(notify_udfp_cyan_make_sure_delay - away_ms);
+	else
+		ret= 0;
+
+	LCD_DEBUG("past jiffies = %d, past time  = %d ms,  need wait %d more jiffies\n", away_jiffies, away_ms, ret);
+
+	return ret;
+
+}
+
+void sde_notify_fingershooter_event(int status)
+{
+	struct mtkfb_device *fbdev = NULL;
+	char *envp[3];
+	int i = 0;
+	if ((status & SHOOTER_SHOW_BIT) == SHOOTER_SHOW_BIT) {
+		envp[i++] = "FINGERSHOOTER_SHOW=1";
+	} else if ((status & SHOOTER_HIDE_BIT) == SHOOTER_HIDE_BIT) {
+		envp[i++] = "FINGERSHOOTER_SHOW=0";
+	}
+	if ((status & OFF_UNLOCK_BIT) == OFF_UNLOCK_BIT) {
+		envp[i++] = "LCM_SHOW=OFF_UNLOCK";
+	} else if ((status & ON_UNLOCK_BIT) == ON_UNLOCK_BIT) {
+		envp[i++] = "LCM_SHOW=ON_UNLOCK";
+	}
+	envp[i] = NULL;
+	fbdev = (struct mtkfb_device *)mtkfb_fbi->par;
+	kobject_uevent_env(&fbdev->dev->kobj, KOBJ_CHANGE, envp);
+	LCD_INFO("name:%s->notify uevent - fingershooter show: 0x%x, %d\n", fbdev->dev->kobj.name, status, i);
+}
+
+void sde_fingerprint_notify_work(struct work_struct *work)
+{
+
+	LCD_DEBUG("start notify fingershooter state: %d\n", fingershooter_status);
+	sde_notify_fingershooter_event(fingershooter_status);
+}
+
+int sde_notify_fingerprint_status()
+{
+	bool need_notify = false;
+	int ret = 0;
+
+	if (atomic_read(&after_shooter_count) == 0)
+		return ret;
+	need_notify = (atomic_read(&after_shooter_count) == 1);
+	if (need_notify) {
+		queue_delayed_work(fingerprint_workq, &fingerprint_notify_work, get_notify_udfp_cyan_delay_jiffies());
+		atomic_set(&after_shooter_count, 0);
+	}
+	return ret;
+}
+
 static int mtkfb_probe(struct platform_device *pdev)
 {
 	struct mtkfb_device *fbdev = NULL;
@@ -2464,6 +2627,10 @@ static int mtkfb_probe(struct platform_device *pdev)
 						 (fbdev->fb_va_base),
 						 fb_mva, fb_base);
 	primary_display_init(mtkfb_find_lcm_driver(), lcd_fps, is_lcm_inited);
+
+	fingerprint_workq = create_singlethread_workqueue("fingerprint_notify_workq");
+	INIT_DELAYED_WORK(&fingerprint_notify_work, sde_fingerprint_notify_work);
+	notify_udfp_cyan_make_sure_delay = 28;
 
 	init_state++; /* 1 */
 	MTK_FB_XRES = DISP_GetScreenWidth();
@@ -2654,8 +2821,10 @@ static void mtkfb_shutdown(struct platform_device *pdev)
 		MTKFB_LOG("mtkfb has been power off\n");
 		return;
 	}
+	mutex_lock(&fb_pow_mod_lock);
 	primary_display_set_power_mode(FB_SUSPEND);
 	primary_display_suspend();
+	mutex_unlock(&fb_pow_mod_lock);
 	MTKFB_LOG("[FB Driver] leave %s\n", __func__);
 }
 

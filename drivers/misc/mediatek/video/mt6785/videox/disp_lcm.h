@@ -51,10 +51,18 @@ int disp_lcm_esd_check(struct disp_lcm_handle *plcm);
 int disp_lcm_esd_recover(struct disp_lcm_handle *plcm);
 int disp_lcm_suspend(struct disp_lcm_handle *plcm);
 int disp_lcm_resume(struct disp_lcm_handle *plcm);
+int disp_lcm_enable(struct disp_lcm_handle *plcm, void *handle);
 int disp_lcm_is_support_adjust_fps(struct disp_lcm_handle *plcm);
 int disp_lcm_adjust_fps(void *cmdq, struct disp_lcm_handle *plcm, int fps);
-int disp_lcm_set_backlight(struct disp_lcm_handle *plcm, void *handle,
-			   int level);
+int disp_lcm_vivo_SetMipiCmd_HS(struct disp_lcm_handle *plcm, void *handle, char cmdtype, unsigned int levelsetting);
+int disp_lcm_set_backlight(struct disp_lcm_handle *plcm,
+	void *handle, int level);
+/*hbm*/
+int disp_lcm_set_hbm(int en, struct disp_lcm_handle *plcm, void *qhandle);
+int disp_lcm_get_hbm_state(struct disp_lcm_handle *plcm);
+int disp_lcm_get_hbm_wait(struct disp_lcm_handle *plcm);
+int disp_lcm_set_hbm_wait(bool wait, struct disp_lcm_handle *plcm);
+unsigned int disp_lcm_get_hbm_time(bool en, struct disp_lcm_handle *plcm);
 int disp_lcm_read_fb(struct disp_lcm_handle *plcm);
 int disp_lcm_ioctl(struct disp_lcm_handle *plcm, enum LCM_IOCTL ioctl,
 		   unsigned int arg);
@@ -69,16 +77,16 @@ int disp_lcm_set_lcm_cmd(struct disp_lcm_handle *plcm, void *cmdq_handle,
 int disp_lcm_is_partial_support(struct disp_lcm_handle *plcm);
 int disp_lcm_validate_roi(struct disp_lcm_handle *plcm, int *x, int *y,
 			  int *w, int *h);
+#ifndef CONFIG_LCM_PANEL_TYPE_TFT
+int disp_lcm_aod(struct disp_lcm_handle *plcm, int enter, void *handle);
+int disp_lcm_set_aod_area(struct disp_lcm_handle *plcm,void *handle, unsigned char *area);
+
+#else
 int disp_lcm_aod(struct disp_lcm_handle *plcm, int enter);
+#endif
+int disp_lcm_get_doze_delay(struct disp_lcm_handle *plcm);
 
 int disp_lcm_is_arr_support(struct disp_lcm_handle *plcm);
-
-/*hbm*/
-int disp_lcm_set_hbm(bool en, struct disp_lcm_handle *plcm, void *qhandle);
-int disp_lcm_get_hbm_state(struct disp_lcm_handle *plcm);
-int disp_lcm_get_hbm_wait(struct disp_lcm_handle *plcm);
-int disp_lcm_set_hbm_wait(bool wait, struct disp_lcm_handle *plcm);
-unsigned int disp_lcm_get_hbm_time(bool en, struct disp_lcm_handle *plcm);
 
 #ifdef CONFIG_MTK_HIGH_FRAME_RATE
 /*-----------------------DynFPS start-----------------------------------*/

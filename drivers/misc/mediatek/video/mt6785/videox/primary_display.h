@@ -432,9 +432,13 @@ int primary_display_get_original_height(void);
 int primary_display_lcm_ATA(void);
 int primary_display_setbacklight_nolock(unsigned int level);
 int primary_display_setbacklight(unsigned int level);
+int primary_display_set_lcm_hbm(int en);
+int primary_display_hbm_wait(int en);
+void primary_dispaly_tune_hbm_dim(bool en, struct cmdqRecStruct *handle);
 int primary_display_pause(PRIMARY_DISPLAY_CALLBACK callback,
 			  unsigned int user_data);
 int primary_display_switch_dst_mode(int mode);
+int primary_display_switch_aod(int mode);
 int primary_display_get_lcm_index(void);
 int primary_display_force_set_fps(unsigned int keep, unsigned int skip);
 int primary_display_set_fps(int fps);
@@ -473,6 +477,8 @@ enum mtkfb_power_mode primary_display_set_power_mode(enum mtkfb_power_mode
 						     new_mode);
 enum mtkfb_power_mode primary_display_get_power_mode(void);
 enum mtkfb_power_mode primary_display_check_power_mode(void);
+enum mtkfb_power_mode primary_display_get_power_mode_nolock(void);
+enum mtkfb_power_mode primary_display_get_prev_power_mode_nolock(void);
 void debug_print_power_mode_check(enum mtkfb_power_mode prev,
 				  enum mtkfb_power_mode cur);
 bool primary_is_aod_supported(void);
@@ -524,7 +530,7 @@ extern void check_mm0_clk_sts(void);
 #ifdef MTK_FB_MMDVFS_SUPPORT
 int primary_display_get_dvfs_last_req(void);
 #endif
-void primary_display_vdo_restart(bool need_wait_frame_done);
+
 /**************function for ARR start************************/
 unsigned int primary_display_is_support_ARR(void);
 int primary_display_wait_fps_change(unsigned int *new_fps);
@@ -554,10 +560,6 @@ int lcm_fps_ctx_init(struct lcm_fps_ctx_t *fps_ctx);
 int lcm_fps_ctx_reset(struct lcm_fps_ctx_t *fps_ctx);
 int lcm_fps_ctx_update(struct lcm_fps_ctx_t *fps_ctx,
 		unsigned long long cur_ns);
-
-int primary_display_set_lcm_hbm(bool en, struct disp_frame_cfg_t *cfg);
-int primary_display_hbm_wait(bool en);
-int primary_display_hbm_delay(bool en, struct disp_frame_cfg_t *cfg);
 
 #ifdef CONFIG_MTK_HIGH_FRAME_RATE
 /**************function for DynFPS start************************/

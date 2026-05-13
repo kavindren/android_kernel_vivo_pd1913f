@@ -1749,6 +1749,15 @@ int sensor_get_data_from_hub(uint8_t sensorType,
 	return err;
 }
 
+#ifdef CONFIG_SENSOR_HUB_MONITOR
+static struct notifier_block *reset_notify;
+void nanohub_register_notifier(struct notifier_block *nb)
+{
+	reset_notify = nb;
+}
+EXPORT_SYMBOL(nanohub_register_notifier);
+#endif
+
 int sensor_set_cmd_to_hub(uint8_t sensorType,
 	enum CUST_ACTION action, void *data)
 {

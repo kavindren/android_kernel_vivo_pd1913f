@@ -138,11 +138,11 @@ static struct workqueue_struct *dis_micbias_workqueue;
 /* when  accdet irq issued, queue work: accdet_work work */
 static struct work_struct accdet_work;
 static struct workqueue_struct *accdet_workqueue;
-#ifdef CONFIG_ACCDET_EINT_IRQ
+
 /* when  eint issued, queue work: eint_work */
 static struct work_struct eint_work;
 static struct workqueue_struct *eint_workqueue;
-#endif
+
 /* micbias_timer: disable micbias if no accdet irq after eint,
  * timeout: 6 seconds
  * timerHandler: dis_micbias_timerhandler()
@@ -2494,9 +2494,8 @@ err_eint_setup:
 	destroy_workqueue(eint_workqueue);
 #endif
 #endif
-#ifdef CONFIG_ACCDET_EINT_IRQ
+
 err_create_workqueue:
-#endif
 	destroy_workqueue(dis_micbias_workqueue);
 err:
 	destroy_workqueue(accdet_workqueue);

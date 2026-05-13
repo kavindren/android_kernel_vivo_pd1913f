@@ -5068,6 +5068,79 @@ long lcd_enp_bias_setting(unsigned int value)
 	return ret;
 }
 
+#ifdef CONFIG_LCM_PANEL_TYPE_TFT
+long lcm_reset_setting(unsigned int value)
+{
+	long ret = 0;
+	if (value)
+		ret = disp_dts_gpio_select_state(DTS_GPIO_STATE_TFT_RST_OUT1);
+	else
+		ret = disp_dts_gpio_select_state(DTS_GPIO_STATE_TFT_RST_OUT0);
+	return ret;
+}
+long lcm_enp_setting(unsigned int value)
+{
+	long ret = 0;
+	if (value)
+		ret = disp_dts_gpio_select_state(DTS_GPIO_STATE_TFT_ENP_OUT1);
+	else
+		ret = disp_dts_gpio_select_state(DTS_GPIO_STATE_TFT_ENP_OUT0);
+	return ret;
+}
+long lcm_enn_setting(unsigned int value)
+{
+	long ret = 0;
+	if (value)
+		ret = disp_dts_gpio_select_state(DTS_GPIO_STATE_TFT_ENN_OUT1);
+	else
+		ret = disp_dts_gpio_select_state(DTS_GPIO_STATE_TFT_ENN_OUT0);
+	return ret;
+}
+long lcm_bkg_setting(unsigned int value)
+{
+	long ret = 0;
+	if (value)
+		ret = disp_dts_gpio_select_state(DTS_GPIO_STATE_TFT_BKG_OUT1);
+	else
+		ret = disp_dts_gpio_select_state(DTS_GPIO_STATE_TFT_BKG_OUT0);
+	return ret;
+}
+long tp_reset_setting(unsigned int value)
+{
+	long ret = 0;
+	if (value)
+		ret = disp_dts_gpio_select_state(DTS_GPIO_STATE_TFT_TPRST_OUT1);
+	else
+		ret = disp_dts_gpio_select_state(DTS_GPIO_STATE_TFT_TPRST_OUT0);
+	return ret;
+}
+#else
+long lcm_vci_setting(unsigned int value)
+{
+	long ret = 0;
+
+	if (value)
+		ret = disp_dts_gpio_select_state(DTS_GPIO_STATE_LCM_VCI_OUT1);
+	else
+		ret = disp_dts_gpio_select_state(DTS_GPIO_STATE_LCM_VCI_OUT0);
+
+	return ret;
+}
+
+
+long lcm_reset_setting(unsigned int value)
+{
+	long ret = 0;
+
+	if (value)
+		ret = disp_dts_gpio_select_state(DTS_GPIO_STATE_LCM_RST_OUT1);
+	else
+		ret = disp_dts_gpio_select_state(DTS_GPIO_STATE_LCM_RST_OUT0);
+
+	return ret;
+}
+#endif
+
 int ddp_dsi_set_lcm_utils(enum DISP_MODULE_ENUM module,
 	struct LCM_DRIVER *lcm_drv)
 {

@@ -975,7 +975,8 @@ struct LCM_UTIL_FUNCS {
 	void (*send_cmd)(unsigned int cmd);
 	void (*send_data)(unsigned int data);
 	unsigned int (*read_data)(void);
-
+	void (*dsi_set_cmdq_V4)(struct LCM_setting_table_V3 *para_list,
+							unsigned int size,	bool hs);
 	void (*dsi_set_cmdq_V3)(struct LCM_setting_table_V3 *para_list,
 			unsigned int size, unsigned char force_update);
 	void (*dsi_set_cmdq_V2)(unsigned int cmd, unsigned char count,
@@ -999,6 +1000,12 @@ struct LCM_UTIL_FUNCS {
 	int (*set_gpio_dir)(unsigned int pin, unsigned int dir);
 	int (*set_gpio_pull_enable)(unsigned int pin, unsigned char pull_en);
 	long (*set_gpio_lcd_enp_bias)(unsigned int value);
+	long (*lcm_vci_setting)(unsigned int value);
+	long (*lcm_reset_setting)(unsigned int value);
+	long (*tp_reset_setting)(unsigned int value);
+	long (*lcm_enp_setting)(unsigned int value);
+	long (*lcm_enn_setting)(unsigned int value);
+	long (*lcm_bkg_setting)(unsigned int value);
 	void (*dsi_set_cmdq_V11)(void *cmdq, unsigned int *pdata,
 			unsigned int queue_size, unsigned char force_update);
 	void (*dsi_set_cmdq_V22)(void *cmdq, unsigned int cmd,
@@ -1034,7 +1041,8 @@ struct LCM_DRIVER {
 	void (*init_power)(void);
 	void (*suspend_power)(void);
 	void (*resume_power)(void);
-
+	void (*vivo_lcm_reset) (unsigned int level);
+	void (*enable)(void *handle);
 	void (*update)(unsigned int x, unsigned int y, unsigned int width,
 			unsigned int height);
 	unsigned int (*compare_id)(void);
@@ -1044,10 +1052,10 @@ struct LCM_DRIVER {
 	/* /////////////////////////CABC backlight related function */
 	void (*set_backlight)(unsigned int level);
 	void (*set_backlight_cmdq)(void *handle, unsigned int level);
-	bool (*get_hbm_state)(void);
-	bool (*get_hbm_wait)(void);
-	bool (*set_hbm_wait)(bool wait);
-	bool (*set_hbm_cmdq)(bool en, void *qhandle);
+	int (*get_hbm_state)(void);
+	int (*get_hbm_wait)(void);
+	int (*set_hbm_wait)(int wait);
+	int (*set_hbm_cmdq)(int en, void *qhandle);
 	void (*set_pwm)(unsigned int divider);
 	unsigned int (*get_pwm)(unsigned int divider);
 	void (*set_backlight_mode)(unsigned int mode);
@@ -1077,14 +1085,28 @@ struct LCM_DRIVER {
 	void (*set_lcm_cmd)(void *handle, unsigned int *lcm_cmd,
 		unsigned int *lcm_count, unsigned int *lcm_value);
 	/* /////////////PWM///////////////////////////// */
+	unsigned int (*get_id)(unsigned char *lcm_flag);
+	/**********lcmacl start**************/
+#ifdef CONFIG_VIVO_FINGERPRINT_V3
+	void (*lcm_MipiCmd_HS)(void *handle, unsigned char leveldimming, unsigned int levelsetting);
+#else
+	void (*lcm_MipiCmd_HS)(void *handle, unsigned char leveldimming, unsigned char levelsetting);
+#endif
+	void (*lcm_MipiCmd_LP)(void *handle, unsigned char leveldimming, unsigned char levelsetting);
+	/*********lcmacl end**************/
+	const char *get_project_name;
+	void (*lcm_reset)(void);
 	void (*set_pwm_for_mix)(int enable);
 
-	void (*aod)(int enter);
+	void (*aod)(int enter, void* handle);
 	/* /////////////DynFPS///////////////////////////// */
 	void (*dfps_send_lcm_cmd)(void *cmdq_handle,
 		unsigned int from_level, unsigned int to_level, struct LCM_PARAMS *params);
 	bool (*dfps_need_send_cmd)(
 	unsigned int from_level, unsigned int to_level, struct LCM_PARAMS *params);
+
+	void (*set_aod_area_cmdq)(void *handle, unsigned char *area);
+	int (*get_doze_delay)(void);
 };
 
 /* LCM Driver Functions */

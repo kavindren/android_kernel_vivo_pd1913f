@@ -17,6 +17,53 @@
 #include <linux/types.h>
 #include "mtkfb_info.h"
 
+/*************config lcm log format************************/
+extern int lcmpr_debug_enabled;
+#define LCD_INFO(fmt, ...)                                             \
+printk(KERN_INFO "DSI_LCM_INFO: %s(%d): " fmt,                  \
+__func__, __LINE__, ##__VA_ARGS__)
+
+#define LCD_DEBUG(fmt, ...)                                            \
+do { if (lcmpr_debug_enabled == 1)                                                      \
+	printk(KERN_DEBUG "DSI_LCM_DEBUG: %s(%d): " fmt,                \
+	__func__, __LINE__, ##__VA_ARGS__);              \
+} while (0)
+/******************************************************/
+
+enum panel_aod_power_mode {
+	LCM_PANEL_OFF = 0,
+	LCM_PANEL_ON,
+	LCM_PANEL_AOD,
+	LCM_PANEL_AOD_SUSPEND,
+	LCM_PANEL_STATE_UNKNOWN
+};
+
+/****************HBM TYPE DEFINE************************/
+#define HBM_USER_AUTO_MODE_LEVEL0 			0
+#define HBM_USER_AUTO_MODE_LEVEL1 			1
+#define HBM_USER_AUTO_MODE_LEVEL2			2
+#define HBM_USER_AUTO_MODE_LEVEL3 			3
+#define HBM_UDFP_RESUME_MODE_ON 			4
+#define HBM_UDFP_RESUME_MODE_OFF 			5
+#define HBM_UDFP_AOD_MODE_ON 				6
+#define HBM_UDFP_AOD_MODE_OFF 				7
+#ifdef CONFIG_VIVO_FINGERPRINT_V3
+#define HBM_AOD_UD_OFF_PERF_V3				8
+#define HBM_UDFP_CALI_MODE_ON				9
+#define HBM_UDFP_CALI_MODE_OFF				10
+#else
+#define HBM_UDFP_CALI_MODE_ON				8
+#define HBM_UDFP_CALI_MODE_OFF				9
+#endif
+/******************************************************/
+
+#define VIVO_UD_HBM_MASK        0x3
+#define VIVO_SHOOTER_MASK       0x3C
+#define FINGERSHOOTER_FRAMEDONE_MS      14
+#define SHOOTER_SHOW_BIT    0x04
+#define SHOOTER_HIDE_BIT    0x08
+#define OFF_UNLOCK_BIT    0x10
+#define ON_UNLOCK_BIT    0x20
 
 /**NOTICE:
  * Must be consistent with bionic/libc/kernel/linux/common/mtkfb.h

@@ -15,13 +15,13 @@
 &pio {
 	camera0_rst_low: camera0_rst_output_low@gpio144 {
 		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO144__FUNC_GPIO144>;
+			/*pinmux = <PINMUX_GPIO144__FUNC_GPIO144>;*/
 			output-low;
 		};
 	};
 	camera0_rst_high: camera0_rst_output_high@gpio144 {
 		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO144__FUNC_GPIO144>;
+			/*pinmux = <PINMUX_GPIO144__FUNC_GPIO144>;*/
 			output-high;
 		};
 	};
@@ -47,13 +47,13 @@
 	};
 	camera1_rst_low: camera1_rst_output_low@gpio143 {
 		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO143__FUNC_GPIO143>;
+			/*pinmux = <PINMUX_GPIO143__FUNC_GPIO143>;*/
 			output-low;
 		};
 	};
 	camera1_rst_high: camera1_rst_output_high@gpio143 {
 		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO143__FUNC_GPIO143>;
+			/*pinmux = <PINMUX_GPIO143__FUNC_GPIO143>;*/
 			output-high;
 		};
 	};
@@ -71,25 +71,25 @@
 	};
 	camera2_rst_low: camera2_rst_output_low@gpio145 {
 		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO145__FUNC_GPIO145>;
+			/*pinmux = <PINMUX_GPIO145__FUNC_GPIO145>;*/
 			output-low;
 		};
 	};
 	camera2_rst_high: camera2_rst_output_high@gpio145 {
 		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO145__FUNC_GPIO145>;
+			/*pinmux = <PINMUX_GPIO145__FUNC_GPIO145>;*/
 			output-high;
 		};
 	};
 	camera2_pdn_low: camera2_pdn_output_low@gpio146 {
 		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO146__FUNC_GPIO146>;
+			/*pinmux = <PINMUX_GPIO146__FUNC_GPIO146>;*/
 			output-low;
 		};
 	};
 	camera2_pdn_high: camera2_pdn_output_high@gpio146 {
 		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO146__FUNC_GPIO146>;
+			/*pinmux = <PINMUX_GPIO146__FUNC_GPIO146>;*/
 			output-high;
 		};
 	};
@@ -213,13 +213,13 @@
 	};
 	camera2_vcamd_off: camera2_vcamd_output_low@gpio146 {
 		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO146__FUNC_GPIO146>;
+			/*pinmux = <PINMUX_GPIO146__FUNC_GPIO146>;*/
 			output-low;
 		};
 	};
 	camera2_vcamd_on: camera2_vcamd_output_high@gpio146 {
 		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO146__FUNC_GPIO146>;
+			/*pinmux = <PINMUX_GPIO146__FUNC_GPIO146>;*/
 			output-high;
 		};
 	};
@@ -237,14 +237,14 @@
 	};
 	camera3_vcamd_off: camera3_vcamd_output_low@gpio146 {
 		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO146__FUNC_GPIO146>;
+			/*pinmux = <PINMUX_GPIO146__FUNC_GPIO146>;*/
 			slew-rate = <1>;
 			output-low;
 		};
 	};
 	camera3_vcamd_on: camera3_vcamd_output_high@gpio146 {
 		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO146__FUNC_GPIO146>;
+			/*pinmux = <PINMUX_GPIO146__FUNC_GPIO146>;*/
 			output-high;
 		};
 	};
@@ -262,13 +262,13 @@
 	};
 	camera4_vcamd_off: camera4_vcamd_output_low@gpio146 {
 		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO146__FUNC_GPIO146>;
+			/*pinmux = <PINMUX_GPIO146__FUNC_GPIO146>;*/
 			output-low;
 		};
 	};
 	camera4_vcamd_on: camera4_vcamd_output_high@gpio146 {
 		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO146__FUNC_GPIO146>;
+			/*pinmux = <PINMUX_GPIO146__FUNC_GPIO146>;*/
 			output-high;
 		};
 	};

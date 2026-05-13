@@ -506,18 +506,4 @@
 		compatible = "mediatek,mt6359-misc";
 		base = <0x580>;
 	};
-	mt6359keys: mt6359keys {
-		compatible = "mediatek,mt6359-keys";
-		mediatek,long-press-mode = <2>;
-		power-off-time-sec = <0>;
-
-		power {
-			linux,keycodes = <116>;
-			wakeup-source;
-		};
-
-		home {
-			linux,keycodes = <115>;
-		};
-	};
 };/* End of main_pmic */

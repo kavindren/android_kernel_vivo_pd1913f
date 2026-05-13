@@ -79,7 +79,7 @@
 	};
 	led6:led@6 {
 		compatible = "mediatek,lcd-backlight";
-		led_mode = <5>;
+		led_mode = <4>;
 		data = <1>;
 		pwm_config = <0 3 0 0 0>;
 	};
@@ -196,43 +196,105 @@
 	};
 }; /* IRTX GPIO Settings -End */
 
-/* DISPSYS GPIO standardization */
-&pio {
-	mtkfb_pins_lcm_rst_out1_gpio: lcm_rst_out1_gpio {
-		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO45__FUNC_GPIO45>;
-			slew-rate = <1>;
-			output-high;
-		};
-	};
+/***************for LCM GPIO config begin****************/
+&mtkfb {
+	pinctrl-names = 	"tft_rst_out0_gpio",
+					"tft_rst_out1_gpio",
+					"tft_enp_en0_gpio",
+					"tft_enp_en1_gpio",
+					"tft_enn_en0_gpio",
+					"tft_enn_en1_gpio",
+					"tft_bkg_en0_gpio",
+					"tft_bkg_en1_gpio",
+					"tft_tprst_en0_gpio",
+					"tft_tprst_en1_gpio";
 
-	mtkfb_pins_lcm_rst_out0_gpio: lcm_rst_out0_gpio {
+	pinctrl-0 = <&tft_rst_out0_gpio>;
+	pinctrl-1 = <&tft_rst_out1_gpio>;
+	pinctrl-2 = <&tft_enp_en0_gpio>;
+	pinctrl-3 = <&tft_enp_en1_gpio>;
+	pinctrl-4 = <&tft_enn_en0_gpio>;
+	pinctrl-5 = <&tft_enn_en1_gpio>;
+	pinctrl-6 = <&tft_bkg_en0_gpio>;
+	pinctrl-7 = <&tft_bkg_en1_gpio>;
+	pinctrl-8 = <&tft_tprst_en0_gpio>;
+	pinctrl-9 = <&tft_tprst_en1_gpio>;
+
+	status = "okay";
+};
+&pio {
+	tft_rst_out0_gpio: tft_rst_out0_gpio {
 		pins_cmd_dat {
 			pinmux = <PINMUX_GPIO45__FUNC_GPIO45>;
 			slew-rate = <1>;
 			output-low;
 		};
 	};
-
-	mtkfb_pins_lcm_dsi_te: lcm_dsi_te {
+	tft_rst_out1_gpio: tft_rst_out1_gpio {
 		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO44__FUNC_DSI_TE>;
+			pinmux = <PINMUX_GPIO45__FUNC_GPIO45>;
+			slew-rate = <1>;
+			output-high;
+		};
+	};
+	tft_enp_en0_gpio: tft_enp_en0_gpio {
+		pins_cmd_dat {
+			pinmux = <PINMUX_GPIO169__FUNC_GPIO169>;
+			slew-rate = <1>;
+			output-low;
+		};
+	};
+	tft_enp_en1_gpio: tft_enp_en1_gpio {
+		pins_cmd_dat {
+			pinmux = <PINMUX_GPIO169__FUNC_GPIO169>;
+			slew-rate = <1>;
+			output-high;
+		};
+	};
+	tft_enn_en0_gpio: tft_enn_en0_gpio {
+		pins_cmd_dat {
+			pinmux = <PINMUX_GPIO165__FUNC_GPIO165>;
+			slew-rate = <1>;
+			output-low;
+		};
+	};
+	tft_enn_en1_gpio: tft_enn_en1_gpio {
+		pins_cmd_dat {
+			pinmux = <PINMUX_GPIO165__FUNC_GPIO165>;
+			slew-rate = <1>;
+			output-high;
+		};
+	};
+	tft_bkg_en0_gpio: tft_bkg_en0_gpio {
+		pins_cmd_dat {
+			pinmux = <PINMUX_GPIO179__FUNC_GPIO179>;
+			slew-rate = <1>;
+			output-low;
+		};
+	};
+	tft_bkg_en1_gpio: tft_bkg_en1_gpio {
+		pins_cmd_dat {
+			pinmux = <PINMUX_GPIO179__FUNC_GPIO179>;
+			slew-rate = <1>;
+			output-high;
+		};
+	};
+	tft_tprst_en0_gpio: tft_tprst_en0_gpio {
+		pins_cmd_dat {
+			pinmux = <PINMUX_GPIO23__FUNC_GPIO23>;
+			slew-rate = <1>;
+			output-low;
+		};
+	};
+	tft_tprst_en1_gpio: tft_tprst_en1_gpio {
+		pins_cmd_dat {
+			pinmux = <PINMUX_GPIO23__FUNC_GPIO23>;
+			slew-rate = <1>;
+			output-high;
 		};
 	};
 };
-
-&mtkfb {
-	pinctrl-names =
-		"lcm_rst_out1_gpio", "lcm_rst_out0_gpio",
-		"mode_te_te";
-	pinctrl-0 = <&mtkfb_pins_lcm_rst_out1_gpio>;
-	pinctrl-1 = <&mtkfb_pins_lcm_rst_out0_gpio>;
-	pinctrl-2 = <&mtkfb_pins_lcm_dsi_te>;
-	status = "okay";
-};
-
-/* DISPSYS GPIO standardization end*/
-
+/***************for LCM GPIO config end****************/
 #include <k69v1_64/cust.dtsi>
 #include "mediatek/cust_mt6768_camera.dtsi"
 #include "mediatek/cust_mt6768_touch_1080x2160.dtsi"

@@ -250,7 +250,7 @@
 
 &gpio{
 	gpio_init_default = <0 0 0 0 1 1 1>,
-		<1 0 0 0 0 1 1>,
+		<1 0 0 0 1 1 1>,
 		<2 0 0 0 1 0 1>,
 		<3 0 0 0 0 0 0>,
 		<4 0 0 0 1 0 0>,
@@ -756,7 +756,7 @@
 	vivo,capacity-mAh = <4910>;
 	/*COLD_CHG COLD_DISCHG NORMAL_CHG NORMAL_DISCHG*/
 	vivo,car-tune-value = <1000 990 1000 1000>,
-		<1030 1000 1005 1000>,
+		<1020 1000 1005 1000>,
 		<1000 990 1000 1000>,
 		<1000 1000 1000 1000>,
 		<1000 1000 1000 1000>,
@@ -1133,13 +1133,10 @@
 };
 /* yangtao add for usb end */
 
+/* begin: corebsp add for hwversion & cpufreq */
 
-/* add board info fdt node by corebsp begin */
-&board_info {
-	vivo,vendor_project_name = "PD2138F_EX";
-	vivo,vendor_project_cpu = "MT6769T";
-	vivo,vendor_project_freq = "2.0";
-	vivo,vendor_project_cpunum = <8>;
+&vivo_md_co {
+	gpio_for_md_co_load = <77>;
 };
 
 &boards_version {
@@ -1147,24 +1144,26 @@
 	pinctrl-0 = <&board_version>;
 	gpio_nums = <17>;
 	gpios = <21 29 30 52 53 54 55 56 57 69 74 77 78 79 80 31 91>;
-	/* if use pcb version,need to define:pcb_gpio_nums pcb_gpios pcb_maps_nums pcb_gpios_maps */
-	/*pcb_gpio_nums = <2>;*/
-	/*pcb_gpios = <107 108>;*/
-	/* 00:MP_0.1, 01:MP_0.2, 10:MP_0.3, 11:MP_0.4 */
-	/*pcb_maps_nums = <8>;*/
-	/*pcb_gpios_maps = <0x0 0x1 0x1 0x2 0x2 0x3 0x3 0x4>;*/
+	gpios_start = <&pio 21 0>;
+};
+
+&board_info {
+	vivo,vendor_project_name = "PD2138F_EX";
+	vivo,vendor_project_cpu = "MT6769T";
+	vivo,vendor_project_freq = "2.0";
+	vivo,vendor_project_cpunum = <8>;
 };
 
 &tcard_sim_slot {
 	pinctrl-names = "default";
 	pinctrl-0 = <&card_detect>;
-	vivo,sim1-need-detect;
-	vivo,sim2-need-detect;
-	vivo,sim1-detect-high;
-	vivo,sim2-detect-high;
-
+        factory-test,sim1-card;
+        factory-test,sim2-card;
+	//factory-test,tf-card;
+	vivo,new_card_detect;
         card-detect-sim1,gpios = <&pio 47 0x0>;
         card-detect-sim2,gpios = <&pio 46 0x0>;
+	//card-detect-tf-card,gpios = <&pio 18 0x0>;
 };
 
 &pio {
@@ -1172,70 +1171,87 @@
 		pins_cmd0_dat {
 			pinmux = <PINMUX_GPIO21__FUNC_GPIO21>;
 			slew-rate = <0>;
+			bias-pull-up = <11>;
 		};
 		pins_cmd1_dat {
 			pinmux = <PINMUX_GPIO29__FUNC_GPIO29>;
 			slew-rate = <0>;
+			bias-pull-up = <11>;
 		};
 		pins_cmd2_dat {
 			pinmux = <PINMUX_GPIO30__FUNC_GPIO30>;
 			slew-rate = <0>;
+			bias-pull-up = <11>;
 		};
 		pins_cmd3_dat {
 			pinmux = <PINMUX_GPIO52__FUNC_GPIO52>;
 			slew-rate = <0>;
+			bias-pull-up = <11>;
 		};
 		pins_cmd4_dat {
 			pinmux = <PINMUX_GPIO53__FUNC_GPIO53>;
 			slew-rate = <0>;
+			bias-pull-up = <11>;
 		};
 		pins_cmd5_dat {
 			pinmux = <PINMUX_GPIO54__FUNC_GPIO54>;
 			slew-rate = <0>;
+			bias-pull-up = <11>;
 		};
 		pins_cmd6_dat {
 			pinmux = <PINMUX_GPIO55__FUNC_GPIO55>;
 			slew-rate = <0>;
+			bias-pull-up = <11>;
 		};
 		pins_cmd7_dat {
 			pinmux = <PINMUX_GPIO56__FUNC_GPIO56>;
 			slew-rate = <0>;
+			bias-pull-up = <11>;
 		};
 		pins_cmd8_dat {
 			pinmux = <PINMUX_GPIO57__FUNC_GPIO57>;
 			slew-rate = <0>;
+			bias-pull-up = <11>;
 		};
 		pins_cmd9_dat {
 			pinmux = <PINMUX_GPIO69__FUNC_GPIO69>;
 			slew-rate = <0>;
+			bias-pull-up = <11>;
 		};
 		pins_cmd10_dat {
 			pinmux = <PINMUX_GPIO74__FUNC_GPIO74>;
 			slew-rate = <0>;
+			bias-pull-up = <11>;
 		};
 		pins_cmd11_dat {
 			pinmux = <PINMUX_GPIO77__FUNC_GPIO77>;
 			slew-rate = <0>;
+			bias-pull-up = <11>;
 		};
 		pins_cmd12_dat {
 			pinmux = <PINMUX_GPIO78__FUNC_GPIO78>;
 			slew-rate = <0>;
+			bias-pull-up = <11>;
 		};
 		pins_cmd13_dat {
 			pinmux = <PINMUX_GPIO79__FUNC_GPIO79>;
 			slew-rate = <0>;
+			bias-pull-up = <11>;
 		};
 		pins_cmd14_dat {
 			pinmux = <PINMUX_GPIO80__FUNC_GPIO80>;
 			slew-rate = <0>;
+			bias-pull-up = <11>;
 		};
 		pins_cmd15_dat {
 			pinmux = <PINMUX_GPIO31__FUNC_GPIO31>;
 			slew-rate = <0>;
+			bias-pull-up = <11>;
 		};
 		pins_cmd16_dat {
 			pinmux = <PINMUX_GPIO91__FUNC_GPIO91>;
 			slew-rate = <0>;
+			bias-pull-up = <11>;
 		};
 	};
 
@@ -1250,15 +1266,14 @@
 			slew-rate = <0>;
 			bias-disable;
 		};
+		//pins_cmd2_dat {
+		//	pinmux = <PINMUX_GPIO18__FUNC_GPIO18>;
+		//	slew-rate = <0>;
+		//	bias-disable;
+		//};
 	};
 };
-/* add board info fdt node by corebsp end */
-
 /* begin: corebsp add for hwversion & cpufreq */
-&vivo_md_co {
-	gpio_for_md_co_load = <77>;
-};
-/* end: corebsp add for hwversion & cpufreq */
 
 /* Audio add for modify miso driving by dxl */
 /* 4:4mA, 8:8mA, 12:12mA, 16:16mA */

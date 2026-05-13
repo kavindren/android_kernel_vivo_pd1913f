@@ -90,13 +90,13 @@
 &pio {
 	msdc0_pins_default: msdc0@default {
 		pins_cmd {
-			drive-strength = /bits/ 8 <3>;
+			drive-strength = /bits/ 8 <2>;
 		};
 		pins_dat {
-			drive-strength = /bits/ 8 <3>;
+			drive-strength = /bits/ 8 <2>;
 		};
 		pins_clk {
-			drive-strength = /bits/ 8 <3>;
+			drive-strength = /bits/ 8 <4>;
 		};
 		pins_rst {
 			drive-strength = /bits/ 8 <3>;
@@ -108,10 +108,10 @@
 
 	msdc0_pins_hs400: msdc0@hs400 {
 		pins_cmd {
-			drive-strength = /bits/ 8 <3>;
+			drive-strength = /bits/ 8 <2>;
 		};
 		pins_dat {
-			drive-strength = /bits/ 8 <4>;
+			drive-strength = /bits/ 8 <2>;
 		};
 		pins_clk {
 			drive-strength = /bits/ 8 <4>;
@@ -126,10 +126,10 @@
 
 	msdc0_pins_hs200: msdc0@hs200 {
 		pins_cmd {
-			drive-strength = /bits/ 8 <3>;
+			drive-strength = /bits/ 8 <2>;
 		};
 		pins_dat {
-			drive-strength = /bits/ 8 <4>;
+			drive-strength = /bits/ 8 <2>;
 		};
 		pins_clk {
 			drive-strength = /bits/ 8 <4>;

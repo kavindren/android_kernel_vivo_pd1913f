@@ -268,7 +268,6 @@
 &spi1 {
 	#address-cells = <1>;
 	#size-cells = <0>;
-	tee-only;
 	fingerprint@0 {
 		compatible = "goodix,goodix-fp";
 		reg = <0>;
@@ -562,6 +561,7 @@
 };
 /* CAMERA specify sensor end */
 
+#include "mediatek/cust_mt6885_touch_1080x2280.dtsi"
 #include "mediatek/cust_mt6885_camera.dtsi"
 #include <k6889v1_64/cust.dtsi>
 /*End of this file, DO NOT ADD ANYTHING HERE*/

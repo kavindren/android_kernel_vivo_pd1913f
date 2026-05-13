@@ -38,7 +38,6 @@
 		vts-game-mode=<1>;
 		vts-game-idle-time=<10>;
 		vts-gesture=<1>;
-		vts-no-flash-unique-code=<1>;
 		};
 	tp_module3 {
 		compatible = "vivo,touch-panel-module";

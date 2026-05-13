@@ -10,18 +10,20 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
+ 
 /* CAMERA GPIO standardization */
+#if 0
 &pio {
 	camera_pins_cam0_rst_0: cam0@0 {
 		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO144__FUNC_GPIO144>;
+			/*pinmux = <PINMUX_GPIO144__FUNC_GPIO144>;*/
 			slew-rate = <1>;
 			output-low;
 		};
 	};
 	camera_pins_cam0_rst_1: cam0@1 {
 		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO144__FUNC_GPIO144>;
+			/*pinmux = <PINMUX_GPIO144__FUNC_GPIO144>;*/
 			slew-rate = <1>;
 			output-high;
 		};
@@ -70,42 +72,42 @@
 	};
 	camera_pins_cam2_rst_0: cam2@0 {
 		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO143__FUNC_GPIO143>;
+			/*pinmux = <PINMUX_GPIO143__FUNC_GPIO143>;*/
 			slew-rate = <1>;
 			output-low;
 		};
 	};
 	camera_pins_cam2_rst_1: cam2@1 {
 		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO143__FUNC_GPIO143>;
+			/*pinmux = <PINMUX_GPIO143__FUNC_GPIO143>;*/
 			slew-rate = <1>;
 			output-high;
 		};
 	};
 	camera_pins_cam2_pnd_0: cam2@2 {
 		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO146__FUNC_GPIO146>;
+			/*pinmux = <PINMUX_GPIO146__FUNC_GPIO146>;*/
 			slew-rate = <1>;
 			output-low;
 		};
 	};
 	camera_pins_cam2_pnd_1: cam2@3 {
 		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO146__FUNC_GPIO146>;
+			/*pinmux = <PINMUX_GPIO146__FUNC_GPIO146>;*/
 			slew-rate = <1>;
 			output-high;
 		};
 	};
 	camera_pins_cam4_rst_0: cam4@0 {
 		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO145__FUNC_GPIO145>;
+			/*pinmux = <PINMUX_GPIO145__FUNC_GPIO145>;*/
 			slew-rate = <1>;
 			output-low;
 		};
 	};
 	camera_pins_cam4_rst_1: cam4@1 {
 		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO145__FUNC_GPIO145>;
+			/*pinmux = <PINMUX_GPIO145__FUNC_GPIO145>;*/
 			slew-rate = <1>;
 			output-high;
 		};
@@ -124,6 +126,7 @@
 			output-high;
 		};
 	};
+	/*
 	camera_pins_cam0_vcamd_0: cam0@vcam0 {
 		pins_cmd_dat {
 			pinmux = <PINMUX_GPIO138__FUNC_GPIO138>;
@@ -138,6 +141,7 @@
 			output-high;
 		};
 	};
+	*/
 	camera_pins_cam0_vcama_0: cam0@vcam2 {
 		pins_cmd_dat {
 			pinmux = <PINMUX_GPIO5__FUNC_GPIO5>;
@@ -406,8 +410,8 @@
 	pinctrl-14 = <&camera_pins_cam4_rst_1>;
 	pinctrl-15 = <&camera_pins_cam4_pnd_0>;
 	pinctrl-16 = <&camera_pins_cam4_pnd_1>;
-	pinctrl-17 = <&camera_pins_cam0_vcamd_0>;
-	pinctrl-18 = <&camera_pins_cam0_vcamd_1>;
+	/*pinctrl-17 = <&camera_pins_cam0_vcamd_0>;
+	pinctrl-18 = <&camera_pins_cam0_vcamd_1>;*/
 	pinctrl-19 = <&camera_pins_cam0_vcama_0>;
 	pinctrl-20 = <&camera_pins_cam0_vcama_1>;
 	pinctrl-21 = <&camera_pins_cam1_vcamd_0>;
@@ -448,42 +452,12 @@
 	cam2_vcamio-supply = <&mt_pmic_vcamio_ldo_reg>;
 	cam4_vcamio-supply = <&mt_pmic_vcamio_ldo_reg>;
 
-	cam0_pin_mclk = "mclk";
-	cam0_pin_pdn = "gpio";
-	cam0_pin_rst = "gpio";
-	cam0_pin_vcama = "gpio";
-	cam0_pin_vcamd = "gpio";
-	cam0_pin_vcamio = "regulator";
-	cam1_pin_mclk = "mclk";
-	cam1_pin_pdn = "gpio";
-	cam1_pin_rst = "gpio";
-	cam1_pin_vcama = "gpio";
-	cam1_pin_vcamd = "gpio";
-	cam1_pin_vcamio = "regulator";
-	cam2_pin_mclk = "mclk";
-	cam2_pin_pdn = "gpio";
-	cam2_pin_rst = "gpio";
-	cam2_pin_vcama = "gpio";
-	cam2_pin_vcamd = "gpio";
-	cam2_pin_vcamio = "regulator";
-	cam3_pin_mclk = "mclk";
-	cam3_pin_pdn = "gpio";
-	cam3_pin_rst = "gpio";
-	cam3_pin_vcama = "gpio";
-	cam3_pin_vcamd = "gpio";
-	cam3_pin_vcamio = "regulator";
-	cam4_pin_mclk = "mclk";
-	cam4_pin_pdn = "gpio";
-	cam4_pin_rst = "gpio";
-	cam4_pin_vcama = "gpio";
-	cam4_pin_vcamd = "gpio";
-	cam4_pin_vcamio = "regulator";
-
 	status = "okay";
 };
 /* CAMERA GPIO end */
-
+*/
 /* CAMERA EEPROM */
+/*
 &i2c2 {
 	mtk_camera_eeprom2:camera_eeprom2@50 {
 		compatible = "mediatek,camera_eeprom";
@@ -513,3 +487,5 @@
 	};
 };
 /* CAMERA EEPROM end */
+
+#endif

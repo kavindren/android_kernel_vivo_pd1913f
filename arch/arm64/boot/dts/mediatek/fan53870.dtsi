@@ -2,9 +2,9 @@
         compatible = "onsemi,fan53870";
         reg = <0x35>;
 	
-	fan53870,irq = <&pio 20 0>;
-	fan53870,reset = <&pio 148 0>;
-	fan53870,init-settings = <0x13 0x6A>,<0x14 0x15>;
+	fan53870,irq = <&pio 14 0>;
+	fan53870,reset = <&pio 122 0>;
+	fan53870,init-settings = <0x13 0x9a>,<0x14 0x05>;
 	
         fan53870_l1:onsemi,fan53870@0{
             offset = /bits/ 16 <0x0000>;

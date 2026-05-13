@@ -13,12 +13,13 @@
 
 / {
 	mt6360_typec: type_c_port0 {
+		mt-dual,supported_modes = <0>; /* 0: dfp/ufp, 1: dfp, 2: ufp */
 		mt-tcpc,name = "type_c_port0"; /* tcpc_device's name */
-		/* 0: Unknown, 1: SNK, 2: SRC, 3: DRP, 4: Try.SRC, 5: Try.SNK */
-		mt-tcpc,role_def = <1>;
-		mt-tcpc,rp_level = <1>; /* 0: Default, 1: 1.5, 2: 3.0 */
+		/* 0: SNK Only, 1: SRC Only, 2: DRP, 3: Try.SRC, 4: Try.SNK */
+		mt-tcpc,role_def = <0>;
+		mt-tcpc,rp_level = <0>; /* 0: Default, 1: 1.5, 2: 3.0 */
 		/* 0: Never, 1: Always, 2: EMarkOnly, 3: StartOnly */
-		mt-tcpc,vconn_supply  = <2>;
+		mt-tcpc,vconn_supply  = <1>;
 #if (CONFIG_MTK_GAUGE_VERSION == 30)
 		/* the number of notifier supply */
 		mt-tcpc,notifier_supply_num = <3>;
@@ -26,8 +27,8 @@
 		/* the number of notifier supply */
 		mt-tcpc,notifier_supply_num = <2>;
 #endif
-		mt6360pd,intr_gpio = <&pio 9 0x0>;
-		mt6360pd,intr_gpio_num = <9>;
+		mt6360pd,intr_gpio = <&pio 24 0x0>;
+		mt6360pd,intr_gpio_num = <24>;
 		mt6360pd,pcb_gpio = <&pio 16 0x0>;
 		mt6360pd,pcb_gpio_num = <16>;
 		/* 0: gpio low as phone, 1: gpio high as phone */
@@ -96,7 +97,7 @@
 			2nd_connection = "dfp_d";
 			signal,dp_v13;
 			//signal,dp_gen2;
-			//usbr20_not_used;
+			usbr20_not_used;
 			typec,receptacle;
 			ufp_d {
 				//pin_assignment,mode_a;
@@ -106,12 +107,13 @@
 				//pin_assignment,mode_e;
 			};
 			dfp_d {
+				/* Only support mode C & D */
 				//pin_assignment,mode_a;
 				//pin_assignment,mode_b;
 				pin_assignment,mode_c;
 				pin_assignment,mode_d;
 				pin_assignment,mode_e;
-				//pin_assignment,mode_f;
+				pin_assignment,mode_f;
 			};
 		};
 	};

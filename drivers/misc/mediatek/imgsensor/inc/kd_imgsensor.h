@@ -122,6 +122,17 @@
  ************************************************************************/
 /* SENSOR CHIP VERSION */
 #define RUMBAS4SWOIS_SENSOR_ID 0x01
+
+/* pd1913f start*/
+#define IMX471PD1913_SENSOR_ID                  0x0471
+#define IMX499PD1913_SENSOR_ID                  0x0499
+#define OV8856PD1913_SENSOR_ID                  0x885A
+#define HI846PD1913_SENSOR_ID                   0x0846
+#define GC2375HPD1913_SENSOR_ID                 0x2375
+#define S5KGD1SPPD1913_SENSOR_ID                0x0841
+#define OV02A10PD1913_SENSOR_ID                 0x2509
+/* pd1913f end*/
+
 /*IMX*/
 #define IMX766_SENSOR_ID                        0x0766
 #define IMX766PD2133_SENSOR_ID 					0x0766
@@ -527,6 +538,18 @@
 #define SENSOR_DRVNAME_RUMBAS4SWOIS_MIPI_RAW          "rumbas4swois_mipi_raw"
 #define SENSOR_DRVNAME_RUMBAS4SWOIS_MIPI_RAW_3V1          "rumbas4swois_mipi_raw_3v1"
 /* SENSOR DEVICE DRIVER NAME */
+
+/* pd1913f start */
+#define SENSOR_DRVNAME_IMX471PD1913_MIPI_RAW    "imx471pd1913_mipi_raw"
+#define SENSOR_DRVNAME_IMX499PD1913_MIPI_RAW    "imx499pd1913_mipi_raw"
+#define SENSOR_DRVNAME_OV8856PD1913_MIPI_RAW    "ov8856pd1913_mipi_raw"
+#define SENSOR_DRVNAME_S5KGD1SPPD1913_MIPI_RAW  "s5kgd1sppd1913_mipi_raw"
+#define SENSOR_DRVNAME_HI846PD1913_MIPI_RAW     "hi846pd1913_mipi_raw"
+#define SENSOR_DRVNAME_GC2375HPD1913_MIPI_RAW   "gc2375hpd1913_mipi_raw"
+#define SENSOR_DRVNAME_OV02A10PD1913_MIPI_RAW   "ov02a10pd1913_mipi_raw"
+
+/* pd1913f end */
+
 /*IMX*/
 #define SENSOR_DRVNAME_IMX766PD2133_MIPI_RAW "imx766pd2133_mipi_raw"
 #define SENSOR_DRVNAME_IMX766PD2135_MIPI_RAW "imx766pd2135_mipi_raw"

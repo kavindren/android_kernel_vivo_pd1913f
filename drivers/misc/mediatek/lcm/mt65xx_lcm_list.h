@@ -16,6 +16,9 @@
 
 #include <lcm_drv.h>
 
+extern struct LCM_DRIVER td1901_sofeg04_fhdplus_dsi_cmd_samsung_lcm_drv;
+extern struct LCM_DRIVER pd1913_sofeg04_fhdplus_dsi_cmd_samsung_lcm_drv;
+
 extern struct LCM_DRIVER otm1282a_hd720_dsi_vdo_60hz_lcm_drv;
 extern struct LCM_DRIVER otm1282a_hd720_dsi_vdo_lcm_drv;
 extern struct LCM_DRIVER nt35595_fhd_dsi_cmd_truly_8163_lcm_drv;

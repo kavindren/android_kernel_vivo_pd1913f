@@ -48,7 +48,7 @@
 #endif
 
 #define WARNING(fmt, args...) yprintk(KERN_WARNING, fmt, ## args)
-#define INFO(fmt, args...) yprintk(KERN_INFO, fmt, ## args)
+//#define INFO(fmt, args...) yprintk(KERN_INFO, fmt, ## args)
 #define ERR(fmt, args...) yprintk(KERN_ERR, fmt, ## args)
 
 #define xprintk(level,  format, args...) do { \
@@ -66,7 +66,6 @@
 extern unsigned int musb_debug;
 extern unsigned int musb_debug_limit;
 extern unsigned int musb_uart_debug;
-extern unsigned int musb_speed;
 
 static inline int _dbg_level(unsigned int level)
 {

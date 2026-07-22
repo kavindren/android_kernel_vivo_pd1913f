@@ -93,9 +93,6 @@ extern void usb_rev6_setting(int value);
 extern bool mt_usb_is_device(void);
 extern void mt_usb_connect(void);
 extern void mt_usb_disconnect(void);
-#ifdef CONFIG_PROC_FS
-extern void mtk_usb_phy_tuning(void);
-#endif
 /* ALPS00775710 */
 /* extern bool usb_iddig_state(void); */
 /* ALPS00775710 */
@@ -112,6 +109,9 @@ extern bool is_switch_charger(void);
 /* host and otg */
 extern void mt_usb_otg_init(struct musb *musb);
 extern void mt_usb_otg_exit(struct musb *musb);
+#ifdef CONFIG_TUSB422
+extern void vivo_usb_otg_notify_init(struct musb *musb);//add by vivo
+#endif
 extern void mt_usb_init_drvvbus(void);
 extern void mt_usb_set_vbus(struct musb *musb, int is_on);
 extern int mt_usb_get_vbus_status(struct musb *musb);

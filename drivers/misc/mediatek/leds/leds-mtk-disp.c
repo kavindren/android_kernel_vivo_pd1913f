@@ -17,13 +17,12 @@
 #include <linux/workqueue.h>
 
 #include "leds-mtk-disp.h"
+#include "vivo_src_panel_common.h"
 
 
 #ifdef CONFIG_DRM_MEDIATEK
 extern int mtkfb_set_backlight_level(unsigned int level);
 #endif
-extern bool vivo_panel_if_silent_reboot(int brightness);
-extern int vivo_panel_set(unsigned int type, int parameter);
 
 #ifdef MET_USER_EVENT_SUPPORT
 #include <mt-plat/met_drv.h>
@@ -167,13 +166,21 @@ static int getLedDespIndex(char *name)
 static int led_level_disp_set(struct mtk_led_data *s_led,
 	int brightness)
 {
+	struct vivo_display *vdisp = get_vivo_vdisp();
+	static bool silent_reboot_clear;
 
 	brightness = min(brightness, s_led->conf.max_level);
 
-	/* add by vivo xuhuicong for silent reboot begin */
-	if (vivo_panel_if_silent_reboot(brightness))
-		brightness = 0;
-	/* add by vivo xuhuicong for silent reboot end */
+	if (silent_reboot_clear == true) {
+		LCD_DEBUG("silent reboot clear\n");
+	} else if (vdisp->silent_reboot) {
+			LCD_INFO("[0x%02x] during silent mode,bl_lvl = %d\n", vdisp->panel_id, brightness);
+			if (brightness == 0) {
+				vdisp->silent_reboot = 0;/*After closing the display for the first time, remove silent mode*/
+				silent_reboot_clear = true;
+			}
+			brightness = 0;
+	}
 
 	if (brightness == s_led->conf.level)
 		return 0;
@@ -269,11 +276,6 @@ static int led_level_set(struct led_classdev *led_cdev,
 	if (led_dat->brightness == brightness)
 		return 0;
 
-
-	/* add by vivo xuhuicong for backlight begin */
-	vivo_panel_set(1, brightness);
-	/* add by vivo xuhuicong for backlight end */
-
 	trans_level = (
 		(((1 << led_dat->conf.trans_bits) - 1) * brightness
 		+ (((1 << led_dat->conf.led_bits) - 1) / 2))
@@ -332,7 +334,7 @@ static int mtk_leds_parse_dt(struct device *dev,
 {
 	struct device_node *leds_np, *child;
 	struct mtk_led_data *s_led;
-	int ret = 0, num = 0, level = 573;
+	int ret = 0, num = 0, level = 102;
 	const char *state;
 
 	leds_np = of_find_node_by_name(dev->of_node, "backlight");
@@ -381,9 +383,7 @@ static int mtk_leds_parse_dt(struct device *dev,
 				level = s_led->conf.cdev.max_brightness;
 			else
 				level = 0;
-		} else {
-			level = s_led->conf.cdev.max_brightness;
-		}
+		};
 		pr_info("parse %d leds dt: %s, %d, %d",
 			num, s_led->conf.cdev.name,
 			s_led->conf.max_level,

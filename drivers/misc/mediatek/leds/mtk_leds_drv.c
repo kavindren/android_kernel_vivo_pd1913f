@@ -24,6 +24,7 @@
 #include <linux/spinlock.h>
 #include <mtk_leds_hal.h>
 #include <mtk_leds_drv.h>
+#include "mtkfb.h"
 #ifdef CONFIG_MTK_PWM
 #include <mt-plat/mtk_pwm.h>
 #endif
@@ -40,7 +41,7 @@
 /****************************************************************************
  * variables
  ***************************************************************************/
-#define MT_LED_LEVEL_BIT 10
+#define MT_LED_LEVEL_BIT 11
 
 #ifndef CONFIG_MTK_PWM
 #define CLK_DIV1 0
@@ -63,12 +64,10 @@ static int I2C_SET_FOR_BACKLIGHT  = 350;
 /****************************************************************************
  * DEBUG MACROS
  ***************************************************************************/
-#undef pr_fmt
-#define pr_fmt(fmt) KBUILD_MODNAME " %s(%d) :" fmt, __func__, __LINE__
 static int debug_enable_led = 1;
 #define LEDS_DRV_DEBUG(format, args...) do { \
 	if (debug_enable_led) {	\
-		pr_info("[LED]"format, ##args);\
+		pr_debug("[LED]"format, ##args);\
 	} \
 } while (0)
 
@@ -76,7 +75,7 @@ static int debug_enable_led = 1;
  * for DISP backlight High resolution
  *****************************************************************************/
 #ifdef LED_INCREASE_LED_LEVEL_MTKPATCH
-#define LED_INTERNAL_LEVEL_BIT_CNT 10
+#define LED_INTERNAL_LEVEL_BIT_CNT 11
 #endif
 /* Fix dependency if CONFIG_MTK_LCM not ready */
 void __weak disp_aal_notify_backlight_changed(int bl_1024) {};
@@ -92,9 +91,6 @@ static int mt65xx_led_set_cust(struct cust_mt65xx_led *cust, int level);
 /****************************************************************************
  * add API for temperature control and  brightness limitation
  ***************************************************************************/
-#ifndef CONTROL_BL_TEMPERATURE
-#define CONTROL_BL_TEMPERATURE
-#endif
 
 #ifdef CONTROL_BL_TEMPERATURE
 static unsigned int limit = 255;
@@ -386,9 +382,9 @@ int backlight_brightness_set(int level)
 					   level);
 	} else {
 		return mt65xx_led_set_cust(&cust_led_list[TYPE_LCD],
-					   (level >> (MT_LED_LEVEL_BIT - 8)));
+					   level);
 	}
-	return 0;
+
 }
 EXPORT_SYMBOL(backlight_brightness_set);
 

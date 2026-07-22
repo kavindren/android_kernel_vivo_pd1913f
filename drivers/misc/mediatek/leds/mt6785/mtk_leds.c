@@ -68,8 +68,8 @@ static DEFINE_MUTEX(leds_pmic_mutex);
  * variables
  ***************************************************************************/
 #define CLK_DIV1 0
-
-static unsigned int bl_brightness_hal = 102;
+unsigned int bl_brightness_hal = 102;
+unsigned int current_backlight = 102;
 #ifdef CONFIG_MTK_PWM
 static unsigned int bl_duty_hal = 21;
 #endif
@@ -752,6 +752,10 @@ int mt_brightness_set_pmic(enum mt65xx_led_pmic pmic_type, u32 level, u32 div)
 	return -1;
 }
 
+/* add for silent reboot */
+extern unsigned int silent_reboot;
+static unsigned int silent_count;
+static unsigned int old_brightness;
 int mt_mt65xx_led_set_cust(struct cust_mt65xx_led *cust, int level)
 {
 #ifdef CONFIG_MTK_PWM
@@ -761,6 +765,29 @@ int mt_mt65xx_led_set_cust(struct cust_mt65xx_led *cust, int level)
 	    Cust_GetBacklightLevelSupport_byPWM();
 #endif
 	static bool button_flag;
+	int ret;
+
+	/* add for silent reboot  begin*/
+	if (level == old_brightness) {
+		/*LCD_INFO("old_brightness is %d, level = %d\n", old_brightness, level);
+		if (silent_reboot == 1)*/
+			return 1;
+	} else {
+		old_brightness = level;
+
+		if ((0 == level) && (silent_reboot == 1)) {
+			silent_reboot = 0;   /* when backligt set to 0, clear silent_reboot */
+			silent_count = 0;
+			LCM_INFO("silent_reboot  is clear %d\n", silent_reboot);
+		}
+
+		if (silent_reboot == 1) {
+			level = 0;
+			silent_count++;
+			LCM_INFO ("silent_count is %d\n", silent_count);
+		}
+	}
+	/* add for silent reboot  end*/
 
 	switch (cust->mode) {
 
@@ -823,11 +850,13 @@ int mt_mt65xx_led_set_cust(struct cust_mt65xx_led *cust, int level)
 		return mt_brightness_set_pmic(cust->data, level, bl_div_hal);
 
 	case MT65XX_LED_MODE_CUST_LCM:
-		if (strcmp(cust->name, "lcd-backlight") == 0)
-			bl_brightness_hal = level;
+
 		LEDS_DEBUG("%s backlight control by LCM\n", __func__);
 		/* warning for this API revork */
-		return ((cust_brightness_set) (cust->data)) (level, bl_div_hal);
+		ret = ((cust_brightness_set) (cust->data)) (level, bl_div_hal);
+		if (strcmp(cust->name, "lcd-backlight") == 0)
+			bl_brightness_hal = level;
+		return ret;
 
 	case MT65XX_LED_MODE_CUST_BLS_PWM:
 		if (strcmp(cust->name, "lcd-backlight") == 0)
@@ -864,6 +893,7 @@ void mt_mt65xx_led_set(struct led_classdev *led_cdev, enum led_brightness level)
 	/* spin_lock_irqsave(&leds_lock, flags); */
 
 	/* do something only when level is changed */
+	current_backlight = level;
 	if (led_data->level == level) {
 		LEDS_DEBUG("no level change,do nothing\n");
 		return;
@@ -885,9 +915,8 @@ void mt_mt65xx_led_set(struct led_classdev *led_cdev, enum led_brightness level)
 	disp_pq_notify_backlight_changed((((1 << MT_LED_INTERNAL_LEVEL_BIT_CNT)
 					    - 1) * level + 127) / 255);
 #ifdef CONFIG_MTK_AAL_SUPPORT
-	disp_aal_notify_backlight_changed((((1 <<
-					MT_LED_INTERNAL_LEVEL_BIT_CNT)
-					    - 1) * level + 127) / 255);
+	disp_aal_notify_backlight_changed(level);
+
 #else
 	if (led_data->cust.mode == MT65XX_LED_MODE_CUST_BLS_PWM)
 		mt_mt65xx_led_set_cust(&led_data->cust,

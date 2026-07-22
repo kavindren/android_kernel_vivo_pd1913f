@@ -8,7 +8,7 @@ config USB_MTK_HDRC
 	  configure options to match your silicon and the board
 	  it's being used with, including the USB peripheral role,
 	  or the USB host role, or both.
-
+	  
 config MTK_XHCI
 	bool "MediaTek XHCI support"
 	default n

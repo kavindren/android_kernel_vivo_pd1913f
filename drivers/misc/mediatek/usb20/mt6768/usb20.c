@@ -16,8 +16,6 @@
 #include <linux/dma-mapping.h>
 #include <linux/platform_device.h>
 #include <linux/of_address.h>
-#include <linux/mfd/syscon.h>
-#include <linux/regmap.h>
 
 #include "musb_core.h"
 #include "mtk_musb.h"
@@ -39,6 +37,39 @@
 #ifdef CONFIG_MTK_USB2JTAG_SUPPORT
 #include <mt-plat/mtk_usb2jtag.h>
 #endif
+
+#include <linux/alarmtimer.h>
+#include <linux/time.h>
+
+#ifdef CONFIG_MTK_XHCI
+#include <linux/gpio.h>
+#include <linux/otg_gpio_pinctrl.h>
+#include <linux/of_gpio.h>
+extern int iddig_eint_num;
+extern struct mtk_otg_gpio_pinctrl *otg_gpio_pin_ctrl;
+extern int usb_pre_count;
+extern int disable_irq_count;
+#endif
+
+#ifdef CONFIG_TCPC_CLASS
+#ifdef CONFIG_VIVO_CHARGING_NEW_ARCH
+#include "tcpm.h"
+extern bool musb_is_host(void);
+static struct tcpc_device *cc_tcpc_dev;
+#endif
+#endif
+
+#ifdef CONFIG_TUSB422
+#include "tusb422_linux.h"
+#endif
+
+extern bool host_mode_enabled;
+struct alarm otg_disable_alarm;
+extern struct timespec otg_switch_wait_time;
+
+#define HOST_DISABLED_DELAY_TIME  (300*1000)
+struct delayed_work host_disabled_work;
+struct wakeup_source switch_lock;
 
 #ifndef FPGA_PLATFORM
 #include "mtk_spm_resource_req.h"
@@ -121,82 +152,12 @@ static void usb_dpidle_request(int mode)
 		DBG(0, "USB_DPIDLE_TIMER\n");
 		issue_dpidle_timer();
 		break;
-	case USB_DPIDLE_SUSPEND:
-		spm_resource_req(SPM_RESOURCE_USER_SSUSB,
-			SPM_RESOURCE_MAINPLL | SPM_RESOURCE_CK_26M |
-			SPM_RESOURCE_AXI_BUS);
-		DBG(0, "DPIDLE_SUSPEND\n");
-		break;
-	case USB_DPIDLE_RESUME:
-		spm_resource_req(SPM_RESOURCE_USER_SSUSB,
-			SPM_RESOURCE_RELEASE);
-		DBG(0, "DPIDLE_RESUME\n");
-		break;
 	default:
 		DBG(0, "[ERROR] Are you kidding!?!?\n");
 		break;
 	}
 
 	spin_unlock_irqrestore(&usb_hal_dpidle_lock, flags);
-}
-#endif
-
-#ifdef CONFIG_USB_MTK_OTG
-static struct regmap *pericfg;
-
-static void mt_usb_wakeup(struct musb *musb, bool enable)
-{
-	u32 tmp;
-	bool is_con = musb->port1_status & USB_PORT_STAT_CONNECTION;
-
-	if (IS_ERR_OR_NULL(pericfg)) {
-		DBG(0, "init fail");
-		return;
-	}
-
-	DBG(0, "connection=%d\n", is_con);
-
-	if (enable) {
-		regmap_read(pericfg, USB_WAKEUP_DEC_CON1, &tmp);
-		tmp |= USB1_CDDEBOUNCE(0x8) | USB1_CDEN;
-		regmap_write(pericfg, USB_WAKEUP_DEC_CON1, tmp);
-
-		tmp = musb_readw(musb->mregs, RESREG);
-		if (is_con)
-			tmp &= ~HSTPWRDWN_OPT;
-		else
-			tmp |= HSTPWRDWN_OPT;
-		musb_writew(musb->mregs, RESREG, tmp);
-	} else {
-		regmap_read(pericfg, USB_WAKEUP_DEC_CON1, &tmp);
-		tmp &= ~(USB1_CDEN | USB1_CDDEBOUNCE(0xf));
-		regmap_write(pericfg, USB_WAKEUP_DEC_CON1, tmp);
-
-		tmp = musb_readw(musb->mregs, RESREG);
-		tmp &= ~HSTPWRDWN_OPT;
-		musb_writew(musb->mregs, RESREG, tmp);
-	}
-}
-
-static int mt_usb_wakeup_init(struct musb *musb)
-{
-	struct device_node *node;
-
-	node = of_find_compatible_node(NULL, NULL,
-					"mediatek,mt6768-usb20");
-	if (!node) {
-		DBG(0, "map node failed\n");
-		return -ENODEV;
-	}
-
-	pericfg = syscon_regmap_lookup_by_phandle(node,
-					"pericfg");
-	if (IS_ERR(pericfg)) {
-		DBG(0, "fail to get pericfg regs\n");
-		return PTR_ERR(pericfg);
-	}
-
-	return 0;
 }
 #endif
 
@@ -209,6 +170,9 @@ static struct regulator *reg_vusb;
 static struct regulator *reg_vio18;
 static struct regulator *reg_va12;
 #endif
+
+void config_otg_large_current(bool enable) {}
+bool is_otg_charger;
 
 void __iomem *usb_phy_base;
 
@@ -643,8 +607,8 @@ void do_connection_work(struct work_struct *data)
 
 	if (!mtk_musb->power && (usb_on == true)) {
 		/* enable usb */
-		if (!mtk_musb->usb_lock->active) {
-			__pm_stay_awake(mtk_musb->usb_lock);
+		if (!mtk_musb->usb_lock.active) {
+			__pm_stay_awake(&mtk_musb->usb_lock);
 			DBG(0, "lock\n");
 		} else {
 			DBG(0, "already lock\n");
@@ -657,9 +621,9 @@ void do_connection_work(struct work_struct *data)
 	} else if (mtk_musb->power && (usb_on == false)) {
 		/* disable usb */
 		musb_stop(mtk_musb);
-		if (mtk_musb->usb_lock->active) {
+		if (mtk_musb->usb_lock.active) {
 			DBG(0, "unlock\n");
-			__pm_relax(mtk_musb->usb_lock);
+			__pm_relax(&mtk_musb->usb_lock);
 		} else {
 			DBG(0, "lock not active\n");
 		}
@@ -1526,7 +1490,8 @@ static int __init mt_usb_init(struct musb *musb)
 	musb->usb_rev6_setting = usb_rev6_setting;
 #endif
 
-	musb->usb_lock = wakeup_source_register(NULL, "USB suspend lock");
+	wakeup_source_init(&musb->usb_lock, "USB suspend lock");
+	wakeup_source_init(&musb->charger_lock, "OTG Charger suspend lock");
 
 #ifndef FPGA_PLATFORM
 	reg_vusb = regulator_get(musb->controller, "vusb");
@@ -1605,10 +1570,13 @@ static int __init mt_usb_init(struct musb *musb)
 
 #ifdef CONFIG_USB_MTK_OTG
 	mt_usb_otg_init(musb);
-	/* enable host suspend mode */
-	mt_usb_wakeup_init(musb);
-	musb->host_suspend = true;
 #endif
+	/*  vivo add start */
+#ifdef CONFIG_TUSB422
+	vivo_usb_otg_notify_init(musb);
+#endif
+	/*  vivo add end */
+
 	return 0;
 }
 
@@ -1662,9 +1630,6 @@ static const struct musb_platform_ops mt_usb_ops = {
 	.disable_clk =  mt_usb_disable_clk,
 	.prepare_clk = mt_usb_prepare_clk,
 	.unprepare_clk = mt_usb_unprepare_clk,
-#ifdef CONFIG_USB_MTK_OTG
-	.enable_wakeup = mt_usb_wakeup,
-#endif
 };
 
 #ifdef CONFIG_MTK_MUSB_DRV_36BIT
@@ -1672,6 +1637,374 @@ static u64 mt_usb_dmamask = DMA_BIT_MASK(36);
 #else
 static u64 mt_usb_dmamask = DMA_BIT_MASK(32);
 #endif
+
+static enum alarmtimer_restart
+otg_disable_alarm_func(struct alarm *alarm, ktime_t now)
+{
+	host_mode_enabled = false;
+	is_otg_charger = false;
+	config_otg_large_current(false);
+
+#ifdef CONFIG_MTK_XHCI
+	if (disable_irq_count >= 1) {
+		printk("otg_disable_alarm_func disable_irq_count: %d. donot trigger disable_irq\n", disable_irq_count);
+	} else {
+		disable_irq(iddig_eint_num);
+		disable_irq_count++;
+	}
+	if (otg_gpio_pin_ctrl->otg_pull_in && otg_gpio_pin_ctrl->otg_pull1_in && otg_gpio_pin_ctrl->otg_iddig_gpio_pull_down) {
+		pinctrl_select_state(otg_gpio_pin_ctrl->pinctrl, otg_gpio_pin_ctrl->otg_pull_in);
+		pinctrl_select_state(otg_gpio_pin_ctrl->pinctrl, otg_gpio_pin_ctrl->otg_pull1_in);
+		pinctrl_select_state(otg_gpio_pin_ctrl->pinctrl, otg_gpio_pin_ctrl->otg_iddig_gpio_pull_down);
+	} else {
+		printk("Warining !!! otg_gpio_pin_ctrl->otg_xxxx in null\n");
+	}
+
+	/*miaqiang add reset usb_prepare_clock,or the usb maybe cannot use*/
+	while (usb_pre_count > 0) {
+		usb_prepare_clock(false);
+		usb_pre_count--;
+		DBG(0, "otg_disable_alarm_func usb_pre_count is:%d\n", usb_pre_count);
+	}
+
+	printk("otg_disable_alarm_func work done, iddig_irq disabled!(%d)\n", disable_irq_count);
+#endif
+
+	if (mtk_musb->charger_lock.active)
+		__pm_relax(&mtk_musb->charger_lock);
+
+	return ALARMTIMER_NORESTART;
+}
+
+extern void issue_host_work(int ops, int delay, bool on_st);
+
+static void otg_disable_work_func(struct work_struct *w)
+{
+	if (!host_mode_enabled) {
+		printk("otg is already disabled, return!\n");
+		return;
+	}
+	host_mode_enabled = false;
+	is_otg_charger = false;
+	config_otg_large_current(false);
+#ifdef CONFIG_TCPC_CLASS
+#ifdef CONFIG_VIVO_CHARGING_NEW_ARCH
+	if (!cc_tcpc_dev)
+		cc_tcpc_dev = tcpc_dev_get_by_name("type_c_port0");
+	if (!cc_tcpc_dev) {
+		DBG(0, "set_typec_power_role from TUSB422..\n");
+#ifdef CONFIG_TUSB422
+		vivo_set_tusb422_power_role(1);
+#endif
+	} else {
+		DBG(0, "set_typec_power_role from RT1711..\n");
+		vivo_set_typec_power_role(TYPEC_ROLE_SNK);
+	}
+
+	__pm_relax(&switch_lock);
+#endif
+#endif
+
+	printk("otg_disable_work_func work done!\n");
+
+	if (mtk_musb->charger_lock.active)
+		__pm_relax(&mtk_musb->charger_lock);
+}
+
+static ssize_t otg_mode_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    if (!dev) {
+		DBG(0, "dev otg mode is null!!\n");
+		return -ENODEV;
+	}
+
+#ifdef CONFIG_MTK_XHCI
+    if ((!gpio_get_value(otg_gpio_pin_ctrl->usbid_gpio)) && host_mode_enabled) {
+		printk("----otg enter host mode---- \n");
+		return snprintf(buf, PAGE_SIZE, "%s\n", "host");
+    } else if (usb_cable_connected()) {
+		printk("----otg enter peripheral mode---- \n");
+		return snprintf(buf, PAGE_SIZE, "%s\n", "peripheral");
+    } else {
+		printk("----otg enter none mode---- \n");
+		return snprintf(buf, PAGE_SIZE, "%s\n", "none");
+    }
+#endif
+
+#ifdef CONFIG_TCPC_CLASS
+#ifdef CONFIG_VIVO_CHARGING_NEW_ARCH
+    if (musb_is_host()) {
+	    printk("----otg enter host mode---- \n");
+	    return snprintf(buf, PAGE_SIZE, "%s\n", "host");
+    } else if (usb_cable_connected()) {
+	    printk("----otg enter peripheral mode---- \n");
+	    return snprintf(buf, PAGE_SIZE, "%s\n", "peripheral");
+    } else {
+	    printk("----otg enter none mode---- \n");
+	    return snprintf(buf, PAGE_SIZE, "%s\n", "none");
+    }
+#endif
+#endif
+
+	printk("----otg enter none mode because no config---- \n");
+	return snprintf(buf, PAGE_SIZE, "%s\n", "none");
+}
+static ssize_t otg_mode_store(struct device *dev, struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+    return -EPERM;
+}
+static void host_mode_enable(struct musb *musb, bool enable)
+{
+	if (host_mode_enabled ^ enable) {
+		host_mode_enabled = enable;
+		if (enable) {
+#ifdef CONFIG_MTK_XHCI
+			ktime_t kt = timespec_to_ktime(otg_switch_wait_time);
+			alarm_start_relative(&otg_disable_alarm, kt);
+
+			pinctrl_select_state(otg_gpio_pin_ctrl->pinctrl, otg_gpio_pin_ctrl->otg_pull_high);
+			pinctrl_select_state(otg_gpio_pin_ctrl->pinctrl, otg_gpio_pin_ctrl->otg_iddig_init);
+			irq_set_irq_type(iddig_eint_num, IRQF_TRIGGER_LOW);
+			printk("musb_core start alarm, iddig_irq enable(LOW)(%d).\n", disable_irq_count);
+
+			msleep(10); /*miaoqiang add sleep 1ms for pull hight id pin frist*/
+			//while (disable_irq_count > 0) {
+			enable_irq(iddig_eint_num);
+			disable_irq_count--;
+			printk("host_mode_enable disable_irq_count: %d.\n", disable_irq_count);
+			//}
+#endif
+
+#ifdef CONFIG_TCPC_CLASS
+#ifdef CONFIG_VIVO_CHARGING_NEW_ARCH
+			queue_delayed_work(mtk_musb->st_wq,
+						&host_disabled_work,
+						msecs_to_jiffies(HOST_DISABLED_DELAY_TIME));
+			DBG(0, "set_typec_power_role to TYPEC_ROLE_DRP..\n");
+			if (!cc_tcpc_dev)
+				cc_tcpc_dev = tcpc_dev_get_by_name("type_c_port0");
+			if (!cc_tcpc_dev) {
+				DBG(0, "set_typec_power_role from TUSB422..\n");
+#ifdef CONFIG_TUSB422
+				vivo_set_tusb422_power_role(2);
+#endif
+			} else {
+				DBG(0, "set_typec_power_role from RT1711..\n");
+				vivo_set_typec_power_role(TYPEC_ROLE_DRP);
+			}
+			__pm_stay_awake(&switch_lock);
+#endif
+#endif
+		} else {
+
+#ifdef CONFIG_MTK_XHCI
+			alarm_try_to_cancel(&otg_disable_alarm);
+
+			if (disable_irq_count >= 1) {
+				printk("host_mode_disabled disable_irq_count: %d. donot trigger disable_irq\n", disable_irq_count);
+			} else {
+				disable_irq(iddig_eint_num);
+				disable_irq_count++;
+			}
+			pinctrl_select_state(otg_gpio_pin_ctrl->pinctrl, otg_gpio_pin_ctrl->otg_pull_in);
+			pinctrl_select_state(otg_gpio_pin_ctrl->pinctrl, otg_gpio_pin_ctrl->otg_pull1_in);
+			pinctrl_select_state(otg_gpio_pin_ctrl->pinctrl, otg_gpio_pin_ctrl->otg_iddig_gpio_pull_down);
+			printk("musb_core cancel alarm, iddig_irq disbaled(%d)\n", disable_irq_count);
+#endif
+
+#ifdef CONFIG_TCPC_CLASS
+#ifdef CONFIG_VIVO_CHARGING_NEW_ARCH
+			cancel_delayed_work(&host_disabled_work);
+
+			DBG(0, "set_typec_power_role to TYPEC_ROLE_SNK..\n");
+			if (!cc_tcpc_dev)
+				cc_tcpc_dev = tcpc_dev_get_by_name("type_c_port0");
+			if (!cc_tcpc_dev) {
+				DBG(0, "set_typec_power_role from TUSB422..\n");
+#ifdef CONFIG_TUSB422
+				vivo_set_tusb422_power_role(1);
+#endif
+			} else {
+				DBG(0, "set_typec_power_role from RT1711..\n");
+				vivo_set_typec_power_role(TYPEC_ROLE_SNK);
+			}
+			__pm_relax(&switch_lock);
+#endif
+#endif
+		}
+
+		DBG(0, "current otg state:%d\n", musb->xceiv->otg->state);
+		if (musb->xceiv->otg->state == OTG_STATE_B_PERIPHERAL)
+			return;
+		/*schedule_delayed_work(&mtk_musb->host_work, 0);*/
+		issue_host_work(CONNECTION_OPS_CHECK, 0, true);
+	}
+}
+
+static ssize_t host_mode_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    if (is_otg_charger) {
+		return snprintf(buf, PAGE_SIZE, "%s\n", "disabled");
+    }
+    if (host_mode_enabled) {
+		return snprintf(buf, PAGE_SIZE, "%s\n", "enabled");
+    } else {
+		return snprintf(buf, PAGE_SIZE, "%s\n", "disabled");
+    }
+}
+
+static ssize_t host_mode_store(struct device *dev, struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	char value[32];
+
+	if (!dev) {
+		DBG(0, "dev otg is null!!\n");
+		return count;
+	}
+	if (sscanf(buf, "%s", value) != 1) {
+		return -EINVAL;
+	}
+	if (mtk_musb) {
+		if (!strncmp(value, "disabled", 6)) {
+			printk("===wang otg disabled ===\n");
+			host_mode_enable(mtk_musb, false);
+		} else if (!strncmp(value, "enabled", 6)) {
+			printk("===wang otg enabled ===\n");
+			host_mode_enable(mtk_musb, true);
+		} else {
+			return -EINVAL;
+		}
+	}
+    return count;
+}
+
+static ssize_t otg_charger_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	if (is_otg_charger) {
+		return snprintf(buf, PAGE_SIZE, "%s\n", "enabled");
+	} else {
+		return snprintf(buf, PAGE_SIZE, "%s\n", "disabled");
+	}
+}
+
+static ssize_t otg_charger_store(struct device *dev, struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	char value[32];
+
+	if (!dev) {
+		DBG(0, "dev otg is null!!\n");
+		return count;
+	}
+	if (sscanf(buf, "%s", value) != 1) {
+		return -EINVAL;
+	}
+
+	if (!strncmp(value, "disabled", 6)) {
+		printk("===otg charger disabled ===\n");
+		is_otg_charger = false;
+		host_mode_enable(mtk_musb, false);
+		config_otg_large_current(false);
+		if (mtk_musb->charger_lock.active)
+			__pm_relax(&mtk_musb->charger_lock);
+	} else if (!strncmp(value, "enabled", 6)) {
+		printk("===otg charger enabled ===\n");
+		if (!mtk_musb->charger_lock.active)
+			__pm_stay_awake(&mtk_musb->charger_lock);
+		is_otg_charger = true;
+		config_otg_large_current(true);
+		host_mode_enable(mtk_musb, true);
+	} else {
+		return -EINVAL;
+	}
+
+	return count;
+}
+
+DEVICE_ATTR(otg_mode,  0664, otg_mode_show, otg_mode_store);
+
+DEVICE_ATTR(host_mode,  0664, host_mode_show, host_mode_store);
+
+DEVICE_ATTR(otg_charger,  0664, otg_charger_show, otg_charger_store);
+
+static ssize_t phy_tune_show(struct device *dev,
+			     struct device_attribute *attr, char *buf)
+{
+//	struct mtk_phy_drv *mtkphy = dev_get_drvdata(dev);
+//	struct mtk_phy_instance *instance = NULL;
+	ssize_t size = 0;
+//	int i;
+//	for (i = 0; i < mtkphy->phycfg->num_phys; i++) {
+//		instance = mtkphy->phys[i];
+//		if (!instance)
+//			continue;
+
+	size += sprintf(buf + size, "%s: 0x%x\n%s: 0x%x\n%s: 0x%x\n%s: 0x%x\n",
+			"u2_vrt_ref", mtk_musb->phy_tuning.u2_vrt_ref_real,
+			"u2_term_ref", mtk_musb->phy_tuning.u2_term_ref_real,
+			"u2_hstx_srctrl", mtk_musb->phy_tuning.u2_hstx_srctrl_real,
+			"u2_enhance", mtk_musb->phy_tuning.u2_enhance_real);
+	//}
+
+	return size;
+}
+
+static ssize_t phy_tune_store(struct device *dev, struct device_attribute *attr,
+			      const char *buf, size_t count)
+{
+//	struct mtk_phy_drv *mtkphy = dev_get_drvdata(dev);
+//	struct mtk_phy_instance *instance = NULL;
+	char buf_para[32], *ptr_val;
+	bool u2_vrt_ref = false;
+	bool u2_term_ref = false;
+	bool u2_enhance = false;
+	bool u2_hstx_srctrl = false;
+	int val;
+
+	strcpy(buf_para, buf);
+	ptr_val = strchr(buf_para, ' ');
+	ptr_val++;
+	*(ptr_val - 1) = 0;
+	kstrtoint(ptr_val, 0, &val);
+
+	DBG(0, "phy_tune_store  buf_para = %s\n", buf_para);
+	DBG(0, "phy_tune_store  val = 0x%x\n", val);
+	if (!strcmp(buf_para, "u2_vrt_ref"))
+		u2_vrt_ref = true;
+	else if (!strcmp(buf_para, "u2_term_ref"))
+		u2_term_ref = true;
+	else if (!strcmp(buf_para, "u2_enhance"))
+		u2_enhance = true;
+	else if (!strcmp(buf_para, "u2_hstx_srctrl"))
+		u2_hstx_srctrl = true;
+
+	//for (i = 0; i < mtkphy->phycfg->num_phys; i++) {
+	//	instance = mtkphy->phys[i];
+	//	if (!mtk_musb)
+	//		return;
+
+	if (u2_vrt_ref) {
+		mtk_musb->phy_tuning.u2_vrt_ref = val;
+		mtk_musb->phy_tuning.u2_vrt_ref_host = val;
+	} else if (u2_term_ref) {
+		mtk_musb->phy_tuning.u2_term_ref = val;
+		mtk_musb->phy_tuning.u2_term_ref_host = val;
+	} else if (u2_enhance) {
+		mtk_musb->phy_tuning.u2_enhance = val;
+		mtk_musb->phy_tuning.u2_enhance_host = val;
+	} else if (u2_hstx_srctrl) {
+		mtk_musb->phy_tuning.u2_hstx_srctrl = val;
+		mtk_musb->phy_tuning.u2_hstx_srctrl_host = val;
+	}
+	//}
+
+	return count;
+}
+
+DEVICE_ATTR(phy_tune, S_IRUGO | S_IWUSR, phy_tune_show, phy_tune_store);
+
 
 static int mt_usb_probe(struct platform_device *pdev)
 {
@@ -1848,12 +2181,34 @@ static int mt_usb_probe(struct platform_device *pdev)
 	}
 #endif
 
-/* vivo miaoqiang add for force set usb type */
+/*vivo miaoqiang add for force set usb type*/
 #ifndef CONFIG_VIVO_CHARGING_NEW_ARCH
 	musb_force_on = 1;
-	DBG(0, "vivo charging not config, force set USB type\n");
+	DBG(0, "vivo charging not config, force set musb_force_on to 1\n");
 #endif
+/* vivo miaoqiang add for force set usb type end*/
+
+	wakeup_source_init(&switch_lock, "switch_wakelock");
+	alarm_init(&otg_disable_alarm, ALARM_REALTIME, otg_disable_alarm_func);
+	INIT_DELAYED_WORK(&host_disabled_work, otg_disable_work_func);
+	
+	if (device_create_file(&pdev->dev, &dev_attr_otg_mode)) {
+		pr_err("Failed to create otg_mode file");
+    }
+
+    if (device_create_file(&pdev->dev, &dev_attr_host_mode)) {
+		pr_err("Failed to create host_mode file");
+    }
+
+	if (device_create_file(&pdev->dev, &dev_attr_otg_charger)) {
+		pr_err("Failed to create otg_charger file");
+	}
+
 /* vivo miaoqiang add for force set usb type end */
+
+    if (device_create_file(&pdev->dev, &dev_attr_phy_tune)) {
+		pr_err("Failed to create host_mode file");
+    }
 
 	return 0;
 

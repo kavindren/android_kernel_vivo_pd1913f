@@ -25,18 +25,32 @@
 #include "usb20.h"
 #include <linux/of_irq.h>
 #include <linux/of_address.h>
+#include <linux/of_gpio.h>
+#include <linux/workqueue.h>
+#include <linux/mutex.h>
 #ifdef CONFIG_VIVO_CHARGING_NEW_ARCH
 #include <linux/power/vivo/interact.h>
 #endif
+
+#include <linux/alarmtimer.h>
+#include <linux/time.h>
+
 #ifdef CONFIG_TUSB422
 #include <linux/power/vivo/tusb_notify.h>
 #include "tusb422_linux.h"
 #endif
+
+#ifdef CONFIG_MTK_XHCI
+#include <linux/gpio.h>
+#include <linux/otg_gpio_pinctrl.h>
+bool mtk_host_mode_status;
+struct mtk_otg_gpio_pinctrl *otg_gpio_pin_ctrl;
+#endif
+
 #ifdef CONFIG_MTK_USB_TYPEC
+#include <typec.h>
 #ifdef CONFIG_TCPC_CLASS
 #include "tcpm.h"
-#include <linux/workqueue.h>
-#include <linux/mutex.h>
 static struct notifier_block otg_nb;
 static struct tcpc_device *otg_tcpc_dev;
 static struct delayed_work register_otg_work;
@@ -104,8 +118,15 @@ bool host_mode_enabled;
 int usb_pre_count;
 int disable_irq_count;
 struct device_node		*usb_node;
-static int iddig_eint_num;
+int iddig_eint_num;
 static ktime_t ktime_start, ktime_end;
+int id_state;
+
+#define HOST_DISABLED_DELAY_TIME  (300*1000)
+extern struct delayed_work host_disabled_work;
+
+extern void config_otg_large_current(bool enable);
+extern bool is_otg_charger;
 
 static struct musb_fifo_cfg fifo_cfg_host[] = {
 { .hw_ep_num = 1, .style = MUSB_FIFO_TX,
@@ -316,7 +337,7 @@ static bool typec_req_host;
 static bool iddig_req_host;
 
 static void do_host_work(struct work_struct *data);
-static void issue_host_work(int ops, int delay, bool on_st)
+void issue_host_work(int ops, int delay, bool on_st)
 {
 	struct mt_usb_work *work;
 
@@ -338,10 +359,15 @@ static void issue_host_work(int ops, int delay, bool on_st)
 	DBG(0, "issue work, ops<%d>, delay<%d>, on_st<%d>\n",
 		ops, delay, on_st);
 
-	if (on_st)
+	if (on_st) {
 		queue_delayed_work(mtk_musb->st_wq,
 					&work->dwork, msecs_to_jiffies(delay));
-	else
+		if (ops == CONNECTION_OPS_CHECK) {
+			DBG(0, "wait flash workqueue\n");
+			flush_workqueue(mtk_musb->st_wq);
+			DBG(0, "flash workqueue end\n");
+		}
+	} else
 		schedule_delayed_work(&work->dwork,
 					msecs_to_jiffies(delay));
 }
@@ -436,6 +462,19 @@ static int otg_tcp_notifier_call(struct notifier_block *nb,
 
 bool musb_is_host(void)
 {
+#ifdef CONFIG_MTK_XHCI
+	int iddig_state = 1;
+
+	if (host_mode_enabled)
+		iddig_state = gpio_get_value(otg_gpio_pin_ctrl->usbid_gpio);
+	else
+		iddig_state = 1;
+
+	mtk_host_mode_status = !iddig_state;
+
+	DBG(0, "current host_mode is %d\n", mtk_host_mode_status);
+	return mtk_host_mode_status;
+#else
 	bool host_mode = 0;
 
 	if (typec_control)
@@ -443,6 +482,104 @@ bool musb_is_host(void)
 	else
 		host_mode = iddig_req_host;
 
+	DBG(0, "current typec host_mode is %d\n", host_mode);
+
+	return host_mode;
+#endif
+}
+
+bool mtk_xhci_is_host(void)
+{
+	bool host_mode = 0;
+#ifdef CONFIG_MTK_XHCI
+	ktime_t kt = timespec_to_ktime(otg_switch_wait_time);
+#endif
+	if (typec_control) {
+		host_mode = typec_req_host;
+		if (typec_req_host) {
+			cancel_delayed_work(&host_disabled_work);
+			printk(KERN_ERR "typec host cancel alarm \n");
+		} else {
+			queue_delayed_work(mtk_musb->st_wq,
+					   &host_disabled_work,
+					   msecs_to_jiffies(HOST_DISABLED_DELAY_TIME));
+			printk(KERN_ERR "typec host start alarm \n");
+		}
+	}
+#ifdef CONFIG_MTK_XHCI
+	else {
+		int iddig_state = 1, retry = 3;
+
+		pinctrl_select_state(otg_gpio_pin_ctrl->pinctrl, otg_gpio_pin_ctrl->otg_iddig_gpio);
+		msleep(1);
+		iddig_state = gpio_get_value(otg_gpio_pin_ctrl->usbid_gpio);
+
+		pinctrl_select_state(otg_gpio_pin_ctrl->pinctrl, otg_gpio_pin_ctrl->otg_iddig_init);
+
+		printk(KERN_ERR "iddig_state = %d, host_mode_enabled = %d\n", iddig_state, host_mode_enabled);
+		if (!host_mode_enabled)
+			iddig_state = 1;
+
+		if (id_state == 1 && iddig_state != id_state) {
+			iddig_state = id_state;
+			printk(KERN_ERR "mtk_xhci iddig_state read is not same witg irq state, set to %d\n", id_state);
+		}
+		printk(KERN_ERR "mtk_xhci iddig_state = %d,%d, id_state:%d\n", iddig_state, otg_gpio_pin_ctrl->usbid_gpio, id_state);
+		if (iddig_state == 0) {
+			if (otg_gpio_pin_ctrl->otg_pull1_high && otg_gpio_pin_ctrl->otg_pull_in) {
+				pinctrl_select_state(otg_gpio_pin_ctrl->pinctrl, otg_gpio_pin_ctrl->otg_pull1_high);		
+				pinctrl_select_state(otg_gpio_pin_ctrl->pinctrl, otg_gpio_pin_ctrl->otg_pull_in);
+			} else {
+				printk(KERN_ERR "Warining !!! otg_gpio_pin_ctrl->otg_xxxx in null\n");
+			}
+			msleep(10); /*the second gpio id pull up first*/
+			pinctrl_select_state(otg_gpio_pin_ctrl->pinctrl, otg_gpio_pin_ctrl->otg_iddig_gpio);
+			msleep(1);
+
+			iddig_state = gpio_get_value(otg_gpio_pin_ctrl->usbid_gpio);
+
+			while (iddig_state == 1 && retry > 0) {
+				msleep(10);
+				iddig_state = gpio_get_value(otg_gpio_pin_ctrl->usbid_gpio);
+				retry--;
+			}
+
+			printk(KERN_ERR "mtk_xhci second_iddig_state = %d, retry = %d\n", iddig_state, retry);
+			if (retry == 0) {
+				iddig_state = 0;
+				printk(KERN_ERR "mtk_xhci force set iddig_state = 0\n");
+			}
+			pinctrl_select_state(otg_gpio_pin_ctrl->pinctrl, otg_gpio_pin_ctrl->otg_iddig_init);
+		} else {
+			if (host_mode_enabled) {
+				if (otg_gpio_pin_ctrl->otg_pull_high && otg_gpio_pin_ctrl->otg_pull1_in) {
+					pinctrl_select_state(otg_gpio_pin_ctrl->pinctrl, otg_gpio_pin_ctrl->otg_pull_high);
+					pinctrl_select_state(otg_gpio_pin_ctrl->pinctrl, otg_gpio_pin_ctrl->otg_pull1_in);
+				} else {
+					printk(KERN_ERR "Warining !!! otg_gpio_pin_ctrl->otg_xxxx in null \n");
+				}
+			}
+		}
+		if (host_mode_enabled) {
+			if (iddig_state == 0) {
+				alarm_try_to_cancel(&otg_disable_alarm);
+				printk(KERN_ERR "xhci_mtk host cancel alarm \n");
+			} else {
+				alarm_start_relative(&otg_disable_alarm, kt);
+				printk(KERN_ERR "xhci_mtk host start alarm \n");
+			}
+		} else {
+			pinctrl_select_state(otg_gpio_pin_ctrl->pinctrl, otg_gpio_pin_ctrl->otg_pull_in);
+			pinctrl_select_state(otg_gpio_pin_ctrl->pinctrl, otg_gpio_pin_ctrl->otg_pull1_in);
+			pinctrl_select_state(otg_gpio_pin_ctrl->pinctrl, otg_gpio_pin_ctrl->otg_iddig_gpio_pull_down);
+			printk(KERN_ERR "%s: %d: host_mode_enabled = %d, force gpio state\n", __func__, __LINE__, host_mode_enabled);
+		}
+
+		host_mode = !iddig_state;
+		mtk_host_mode_status = host_mode;
+		DBG(0, "host_mode is %d\n", host_mode);
+	}
+#endif
 	return host_mode;
 }
 
@@ -484,15 +621,23 @@ static int host_plug_test_triggered;
 void switch_int_to_device(struct musb *musb)
 {
 	irq_set_irq_type(iddig_eint_num, IRQF_TRIGGER_HIGH);
-	enable_irq(iddig_eint_num);
-	DBG(0, "%s is done\n", __func__);
+	if (host_mode_enabled) {
+		enable_irq(iddig_eint_num);
+		disable_irq_count--;
+	}
+	DBG(0, "switch_int_to_device(HIGH) is done, iddig_irg %s(%d)\n",
+	    host_mode_enabled?"enabled":"none", disable_irq_count);
 }
 
 void switch_int_to_host(struct musb *musb)
 {
 	irq_set_irq_type(iddig_eint_num, IRQF_TRIGGER_LOW);
-	enable_irq(iddig_eint_num);
-	DBG(0, "%s is done\n", __func__);
+	if (host_mode_enabled) {
+		enable_irq(iddig_eint_num);
+		disable_irq_count--;
+	}
+	DBG(0, "switch_int_to_host(LOW) is done, iddig_irg %s(%d)\n",
+	    host_mode_enabled?"enabled":"none", disable_irq_count);
 }
 
 static void do_host_plug_test_work(struct work_struct *data)
@@ -519,7 +664,11 @@ static void do_host_plug_test_work(struct work_struct *data)
 
 	host_on  = 1;
 	while (1) {
+#ifdef CONFIG_MTK_XHCI
+		if (!mtk_xhci_is_host() && host_on) {
+#else
 		if (!musb_is_host() && host_on) {
+#endif
 			DBG(0, "about to exit");
 			break;
 		}
@@ -606,17 +755,19 @@ static void do_host_work(struct work_struct *data)
 
 	/* always prepare clock and check if need to unprepater later */
 	/* clk_prepare_cnt +1 here */
-	usb_prepare_clock(true);
-
 	down(&mtk_musb->musb_lock);
+	usb_prepare_clock(true);
+	usb_pre_count++;
 
-	host_on = (work->ops ==
-			CONNECTION_OPS_CONN ? true : false);
+	printk(KERN_ERR "work start, is_host=%d\n", mtk_musb->is_host);
+//	host_on = (work->ops ==
+//			CONNECTION_OPS_CONN ? true : false);
+	host_on	= mtk_xhci_is_host();
 
-	DBG(0, "work start, is_host=%d, host_on=%d\n",
-		mtk_musb->is_host, host_on);
-
+	DBG(0, "musb is as %s\n", host_on?"host":"device");
+	id_state = -1;
 	if (host_on && !mtk_musb->is_host) {
+		mtk_musb->is_host_mode = true;
 		/* switch to HOST state before turn on VBUS */
 		MUSB_HST_MODE(mtk_musb);
 
@@ -634,9 +785,12 @@ static void do_host_work(struct work_struct *data)
 #endif
 		/* setup fifo for host mode */
 		ep_config_from_table_for_host(mtk_musb);
+		__pm_stay_awake(&mtk_musb->usb_lock);
 
-		if (!mtk_musb->host_suspend)
-			__pm_stay_awake(mtk_musb->usb_lock);
+		if (is_otg_charger) {
+			DBG(0, "set config_otg_large_current true\n");
+			config_otg_large_current(true);
+		}
 
 		mt_usb_set_vbus(mtk_musb, 1);
 
@@ -661,7 +815,10 @@ static void do_host_work(struct work_struct *data)
 		set_usb_phy_mode(PHY_HOST_ACTIVE);
 		#endif
 
-		musb_start(mtk_musb);
+		if (is_otg_charger)
+			musb_generic_disable(mtk_musb);
+		else
+			musb_start(mtk_musb);
 		if (!typec_control && !host_plug_test_triggered)
 			switch_int_to_device(mtk_musb);
 
@@ -670,6 +827,7 @@ static void do_host_work(struct work_struct *data)
 						&host_plug_test_work, 0);
 		usb_clk_state = OFF_TO_ON;
 	}  else if (!host_on && mtk_musb->is_host) {
+		mtk_musb->is_host_mode = false;
 		/* switch from host -> device */
 		/* for device no disconnect interrupt */
 		spin_lock_irqsave(&mtk_musb->lock, flags);
@@ -683,8 +841,14 @@ static void do_host_work(struct work_struct *data)
 		DBG(1, "devctl is %x\n",
 				musb_readb(mtk_musb->mregs, MUSB_DEVCTL));
 		musb_writeb(mtk_musb->mregs, MUSB_DEVCTL, 0);
-		if (mtk_musb->usb_lock->active)
-			__pm_relax(mtk_musb->usb_lock);
+		if (mtk_musb->usb_lock.active)
+			__pm_relax(&mtk_musb->usb_lock);
+
+		if (is_otg_charger) {
+			DBG(0, "set config_otg_large_current false\n");
+			config_otg_large_current(false);
+		}
+
 		mt_usb_set_vbus(mtk_musb, 0);
 
 		/* for no VBUS sensing IP */
@@ -711,35 +875,71 @@ static void do_host_work(struct work_struct *data)
 		MUSB_DEV_MODE(mtk_musb);
 
 		usb_clk_state = ON_TO_OFF;
+	} else if (!host_on && !mtk_musb->is_host) {
+		DBG(0, "iddig bounce, disable_irq_count = %d\n", disable_irq_count);
+
+		if (disable_irq_count > 0)
+			switch_int_to_host(mtk_musb);
 	}
 	DBG(0, "work end, is_host=%d\n", mtk_musb->is_host);
-	up(&mtk_musb->musb_lock);
 
 	if (usb_clk_state == ON_TO_OFF) {
 		/* clock on -> of: clk_prepare_cnt -2 */
-		usb_prepare_clock(false);
-		usb_prepare_clock(false);
+		//usb_prepare_clock(false);
+		//usb_prepare_clock(false);
+		while (usb_pre_count > 0) {
+			usb_prepare_clock(false);
+			usb_pre_count--;
+			DBG(0, "usb_clk_state:%d usb_pre_count is:%d \n", usb_clk_state, usb_pre_count);
+		}
 	} else if (usb_clk_state == NO_CHANGE) {
 		/* clock no change : clk_prepare_cnt -1 */
 		usb_prepare_clock(false);
+		usb_pre_count--;
+		DBG(0, "usb_clk_state:%d usb_pre_count is:%d \n", usb_clk_state, usb_pre_count);
+
+		while (usb_pre_count > 0 && mtk_musb->is_host != true) {
+			usb_prepare_clock(false);
+			usb_pre_count--;
+			DBG(0, "usb_clk_state:%d(DEVICE) usb_pre_count is:%d \n", usb_clk_state, usb_pre_count);
+		}
 	}
+	up(&mtk_musb->musb_lock);
+
 	/* free mt_usb_work */
 	kfree(work);
 }
 
 static irqreturn_t mt_usb_ext_iddig_int(int irq, void *dev_id)
 {
+#ifdef CONFIG_MTK_XHCI
+	disable_irq_count++;
+	if (!host_mode_enabled) {
+		DBG(0, "otg switch is not enabled, donot detect iddig. iddig_irq disbaled\n");
+		disable_irq_nosync(iddig_eint_num);
+		return IRQ_HANDLED;
+	}
+#endif
+
+	disable_irq_nosync(iddig_eint_num);
 	iddig_cnt++;
 
+#ifdef CONFIG_MTK_XHCI
+	id_state = __gpio_get_value(otg_gpio_pin_ctrl->usbid_gpio);
+	printk(KERN_ERR "iddig_cnt:%d, disable_irq_count:%d id_state:%d; iddig_irq disabled\n", iddig_cnt, disable_irq_count, id_state);
+	printk(KERN_ERR "id pin assert, %s\n", id_state ? "disconnect" : "connect");
+#endif
 	iddig_req_host = !iddig_req_host;
-	DBG(0, "id pin assert, %s\n", iddig_req_host ?
-			"connect" : "disconnect");
-
+	
+#ifdef CONFIG_MTK_XHCI
+	if (!id_state)
+#else
 	if (iddig_req_host)
-		mt_usb_host_connect(0);
+#endif
+		mt_usb_host_connect(300);
 	else
-		mt_usb_host_disconnect(0);
-	disable_irq_nosync(iddig_eint_num);
+		mt_usb_host_disconnect(300);
+	
 	return IRQ_HANDLED;
 }
 
@@ -748,16 +948,128 @@ static const struct of_device_id otg_iddig_of_match[] = {
 	{},
 };
 
+#ifdef CONFIG_MTK_XHCI
+static int xhci_otg_parse_dt(struct platform_device *pdev)
+{
+	int ret = 0;
+	struct pinctrl *pinctrl;
+	struct pinctrl_state *pin_state;
+	struct device_node *node;
+	
+	node = of_find_compatible_node(NULL, NULL, "mediatek,usb_iddig_bi_eint");
+	if (node) {
+		otg_gpio_pin_ctrl->usbid_gpio = of_get_named_gpio(node, "usbid-num", 0);
+	} else {
+		pr_debug("%s : get gpio num err.\n", __func__);
+		otg_gpio_pin_ctrl->usbid_gpio = 375;
+	}
+	
+	pinctrl = devm_pinctrl_get(&pdev->dev);
+	if (IS_ERR(pinctrl)) {
+		ret = PTR_ERR(pinctrl);
+		pr_err("Can't find select gpio pinctrl!.\n");
+	}
+	otg_gpio_pin_ctrl->pinctrl = pinctrl;
+	
+	pin_state = pinctrl_lookup_state(pinctrl, "iddig_otg_gpio");
+	if (IS_ERR(pin_state)) {
+		ret = PTR_ERR(pin_state);
+		pr_err("Can't find gpio iddig_otg_gpio pinctrl!.\n");
+		return ret;
+	}
+	otg_gpio_pin_ctrl->otg_iddig_gpio = pin_state;
+	/*----------------------------------------------------*/
+	pin_state = pinctrl_lookup_state(pinctrl, "iddig_otg_gpio_pull_down");
+	if (IS_ERR(pin_state)) {
+		ret = PTR_ERR(pin_state);
+		pr_err("Can't find gpio iddig_otg_gpio_pull_down pinctrl!.\n");
+		return ret;
+	}
+	otg_gpio_pin_ctrl->otg_iddig_gpio_pull_down = pin_state;
+	/* ----------------------------------------------------*/
+	pin_state = pinctrl_lookup_state(pinctrl, "otg_gpio_pull_high");
+	if (IS_ERR(pin_state)) {
+		ret = PTR_ERR(pin_state);
+		pr_err("Can't find gpio otg_gpio_pull_high pinctrl!.\n");
+		return ret;
+	}
+	otg_gpio_pin_ctrl->otg_pull_high = pin_state;
+	/*----------------------------------------------------*/
+	pin_state = pinctrl_lookup_state(pinctrl, "otg_gpio_pull_low");
+	if (IS_ERR(pin_state)) {
+		ret = PTR_ERR(pin_state);
+		pr_err("Can't find gpio otg_gpio_pull_low pinctrl!.\n");
+		return ret;
+	}
+	otg_gpio_pin_ctrl->otg_pull_low = pin_state;
+	/*----------------------------------------------------*/
+	pin_state = pinctrl_lookup_state(pinctrl, "otg_gpio_pull_in");
+	if (IS_ERR(pin_state)) {
+		ret = PTR_ERR(pin_state);
+		pr_err("Can't find gpio otg_gpio_pull_in pinctrl!.\n");
+		return ret;
+	}
+	otg_gpio_pin_ctrl->otg_pull_in = pin_state;
+	/*----------------------------------------------------*/
+	pin_state = pinctrl_lookup_state(pinctrl, "otg_gpio_pull1_high");
+	if (IS_ERR(pin_state)) {
+		ret = PTR_ERR(pin_state);
+		pr_err("Can't find gpio otg_gpio_pull1_high pinctrl!.\n");
+		return ret;
+	}
+	otg_gpio_pin_ctrl->otg_pull1_high = pin_state;
+	/*----------------------------------------------------*/
+	pin_state = pinctrl_lookup_state(pinctrl, "otg_gpio_pull1_low");
+	if (IS_ERR(pin_state)) {
+		ret = PTR_ERR(pin_state);
+		pr_err("Can't find gpio otg_gpio_pull1_low pinctrl!.\n");
+		return ret;
+	}
+	otg_gpio_pin_ctrl->otg_pull1_low = pin_state;
+	/*----------------------------------------------------*/
+	pin_state = pinctrl_lookup_state(pinctrl, "otg_gpio_pull1_in");
+	if (IS_ERR(pin_state)) {
+		ret = PTR_ERR(pin_state);
+		pr_err("Can't find gpio otg_gpio_pull1_in pinctrl!.\n");
+		return ret;
+	}
+	otg_gpio_pin_ctrl->otg_pull1_in = pin_state;
+	/*----------------------------------------------------*/
+	pin_state = pinctrl_lookup_state(pinctrl, "iddig_otg_init");
+	if (IS_ERR(pin_state)) {
+		ret = PTR_ERR(pin_state);
+		pr_err("Can't find gpio iddig_otg_init pinctrl!.\n");
+		return ret;
+	}
+	otg_gpio_pin_ctrl->otg_iddig_init = pin_state;
+	/*----------------------------------------------------*/	
+	pinctrl_select_state(pinctrl, otg_gpio_pin_ctrl->otg_pull_in);
+	pinctrl_select_state(pinctrl, otg_gpio_pin_ctrl->otg_pull1_in);
+	pinctrl_select_state(pinctrl, otg_gpio_pin_ctrl->otg_iddig_gpio_pull_down);
+
+	return ret;
+}
+#endif
 static int otg_iddig_probe(struct platform_device *pdev)
 {
 	int ret;
 	struct device *dev = &pdev->dev;
 	struct device_node *node = dev->of_node;
 
+	usb_pre_count = 0;
 	iddig_eint_num = irq_of_parse_and_map(node, 0);
 	DBG(0, "iddig_eint_num<%d>\n", iddig_eint_num);
 	if (iddig_eint_num < 0)
 		return -ENODEV;
+#ifdef CONFIG_MTK_XHCI
+	otg_gpio_pin_ctrl = kmalloc(sizeof(struct mtk_otg_gpio_pinctrl), GFP_KERNEL);
+	if (!otg_gpio_pin_ctrl) {
+		dev_err(&pdev->dev, "%s:otg_gpio_pin_ctrl malloc failed\n", __func__);
+		ret = -ENOMEM;
+		return ret;
+	}
+	xhci_otg_parse_dt(pdev);
+#endif
 
 	ret = request_irq(iddig_eint_num, mt_usb_ext_iddig_int,
 					IRQF_TRIGGER_LOW, "USB_IDDIG", NULL);
@@ -767,6 +1079,17 @@ static int otg_iddig_probe(struct platform_device *pdev)
 			iddig_eint_num, ret);
 		return ret;
 	}
+
+#ifdef CONFIG_MTK_XHCI
+	if (!host_mode_enabled) {
+		if (disable_irq_count < 1) {
+			disable_irq_nosync(iddig_eint_num);
+			disable_irq_count++;
+		}
+		id_state = -1;
+		printk(KERN_ERR "%s :iddig_irq disable otg mode by default, count:%d!!! \n", __func__, disable_irq_count);
+	}
+#endif
 
 	return 0;
 }

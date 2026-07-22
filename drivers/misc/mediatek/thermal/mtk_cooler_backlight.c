@@ -45,58 +45,55 @@ static void mtk_cl_backlight_set_max_brightness_limit(void)
 {
 	if (g_backlight_last_level != g_backlight_level) {
 		mtk_cooler_backlight_dprintk("set brightness level = %d\n",
-				g_backlight_level);
+									 g_backlight_level);
+		#if 0
 		switch (g_backlight_level) {
-		case 0:
-			/* 100% */
-			#if defined(CONFIG_LEDS_MTK_DISP) || \
-				defined(CONFIG_LEDS_MTK_PWM) || \
-				defined(CONFIG_LEDS_MTK_I2C)
-			setMaxBrightness("lcd-backlight", 100, 0);
-			#else
-			setMaxbrightness(255, 0);
-			#endif
-			break;
-		case 1:
-			/* 70% */
-			#if defined(CONFIG_LEDS_MTK_DISP) || \
-				defined(CONFIG_LEDS_MTK_PWM) || \
-				defined(CONFIG_LEDS_MTK_I2C)
-			setMaxBrightness("lcd-backlight", 70, 0);
-			#else
-			setMaxbrightness(178, 0);
-			#endif
-			break;
-		case 2:
-			/* 40% */
-			#if defined(CONFIG_LEDS_MTK_DISP) || \
-				defined(CONFIG_LEDS_MTK_PWM) || \
-				defined(CONFIG_LEDS_MTK_I2C)
-			setMaxBrightness("lcd-backlight", 40, 1);
-			#else
-			setMaxbrightness(102, 1);
-			#endif
-			break;
-		case 3:
-			/* 10% */
-			#if defined(CONFIG_LEDS_MTK_DISP) || \
-				defined(CONFIG_LEDS_MTK_PWM) || \
-				defined(CONFIG_LEDS_MTK_I2C)
-			setMaxBrightness("lcd-backlight", 10, 1);
-			#else
-			setMaxbrightness(25, 1);
-			#endif
-			break;
-		default:
-			#if defined(CONFIG_LEDS_MTK_DISP) || \
-				defined(CONFIG_LEDS_MTK_PWM) || \
-				defined(CONFIG_LEDS_MTK_I2C)
-			setMaxBrightness("lcd-backlight", 100, 0);
-			#else
-			setMaxbrightness(255, 0);
-			#endif
-			break;
-		}
+			case 0:
+				/* 100% */
+				#if defined(CONFIG_LEDS_MTK_DISP) || \
+				defined(CONFIG_LEDS_MTK_PWM)
+				setMaxBrightness("lcd-backlight", 100, 0);
+				#else
+				setMaxbrightness(255, 0);
+				#endif
+				break;
+			case 1:
+				/* 70% */
+				#if defined(CONFIG_LEDS_MTK_DISP) || \
+				defined(CONFIG_LEDS_MTK_PWM)
+				setMaxBrightness("lcd-backlight", 70, 0);
+				#else
+				setMaxbrightness(178, 0);
+				#endif
+				break;
+			case 2:
+				/* 40% */
+				#if defined(CONFIG_LEDS_MTK_DISP) || \
+				defined(CONFIG_LEDS_MTK_PWM)
+				setMaxBrightness("lcd-backlight", 40, 1);
+				#else
+				setMaxbrightness(102, 1);
+				#endif
+				break;
+			case 3:
+				/* 10% */
+				#if defined(CONFIG_LEDS_MTK_DISP) || \
+				defined(CONFIG_LEDS_MTK_PWM)
+				setMaxBrightness("lcd-backlight", 10, 1);
+				#else
+				setMaxbrightness(25, 1);
+				#endif
+				break;
+			default:
+				#if defined(CONFIG_LEDS_MTK_DISP) || \
+				defined(CONFIG_LEDS_MTK_PWM)
+				setMaxBrightness("lcd-backlight", 100, 0);
+				#else
+				setMaxbrightness(255, 0);
+				#endif
+				break;
+	}
+	#endif
 	}
 }
 

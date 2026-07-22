@@ -26,6 +26,10 @@ struct GPIO_PINCTRL gpio_pinctrl_list_cam[
 	{"ldo_vcamd_0"},
 	{"ldo_vcamio_1"},
 	{"ldo_vcamio_0"},
+	{"ldo_vcama2_1"},
+	{"ldo_vcama2_0"},
+	{"ldo_vcamaf_1"},
+	{"ldo_vcamaf_0"},
 };
 
 #ifdef MIPI_SWITCH
@@ -123,15 +127,14 @@ static enum IMGSENSOR_RETURN gpio_set(
 	struct GPIO           *pgpio = (struct GPIO *)pinstance;
 	enum   GPIO_STATE      gpio_state;
 
-	/* PK_DBG("%s :debug pinctrl ENABLE, PinIdx %d, Val %d\n",
-	 *	__func__, pin, pin_state);
-	 */
+	//PK_DBG("%s :debug pinctrl ENABLE, PinIdx %d, Val %d, sensor_idx:%d\n",__func__, pin, pin_state, sensor_idx);
+
 
 	if (pin < IMGSENSOR_HW_PIN_PDN ||
 #ifdef MIPI_SWITCH
 	    pin > IMGSENSOR_HW_PIN_MIPI_SWITCH_SEL ||
 #else
-	   pin > IMGSENSOR_HW_PIN_DOVDD ||
+	   pin > IMGSENSOR_HW_PIN_AFVDD ||
 #endif
 	   pin_state < IMGSENSOR_HW_PIN_STATE_LEVEL_0 ||
 	   pin_state > IMGSENSOR_HW_PIN_STATE_LEVEL_HIGH)
@@ -139,7 +142,6 @@ static enum IMGSENSOR_RETURN gpio_set(
 
 	gpio_state = (pin_state > IMGSENSOR_HW_PIN_STATE_LEVEL_0)
 		? GPIO_STATE_H : GPIO_STATE_L;
-
 #ifdef MIPI_SWITCH
 	if (pin == IMGSENSOR_HW_PIN_MIPI_SWITCH_EN)
 		ppinctrl_state = pgpio->ppinctrl_state_switch[

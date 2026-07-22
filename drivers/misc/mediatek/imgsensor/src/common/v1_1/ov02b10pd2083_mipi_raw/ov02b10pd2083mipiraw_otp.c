@@ -88,10 +88,7 @@ static bool vivo_read_eeprom(kal_uint16 addr,  BYTE *data)
     return true;
 }
 
-#if 0
 extern unsigned int is_atboot;/*guojunzheng add*/
-#endif
-
 int ov02b10pd2083_otp_read(void)
 {
 	int i = 0;
@@ -107,13 +104,12 @@ int ov02b10pd2083_otp_read(void)
 
 	long long t1, t2, t3, t4, t5, t6, t, temp;
 	OV02B10PD2083F_EX_OTP_ERROR_CODE = OTP_ERROR_CODE_NORMAL;
-#if 0
 	/* This operation takes a long time, we need to skip it. guojunzheng add begin */
 	if (is_atboot == 1) {
 		printk("[lxd++]AT mode skip ov02b10pd2083_otp_read\n");
 		return 1;
 	}
-#endif
+
 	/* guojunzheng add end */
 
 	for (i = 0; i < VIVO_OTP_DATA_SIZE; i++) {

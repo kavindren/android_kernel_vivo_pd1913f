@@ -252,18 +252,6 @@ static struct imgsensor_struct imgsensor = {
 
 };
 
-#if 1 //vivo
-static struct  SENSOR_RAWINFO_STRUCT imgsensor_raw_info = {
-	 4608,//raw_weight 
- 	 3456,//raw_height
-	 2,//raw_dataBit
-	 BAYER_GBRG,//raw_colorFilterValue
-	 64,//raw_blackLevel
-	 79.0,//raw_viewAngle
-	 10,//raw_bitWidth
-	 64//raw_maxSensorGain
-};
-#endif
 
 /* Sensor output window information */
 static struct SENSOR_WINSIZE_INFO_STRUCT imgsensor_winsize_info[10] = {  
@@ -311,7 +299,7 @@ static struct SET_PD_BLOCK_INFO_T imgsensor_pd_info =  //4640*3456
 	.i4BlockNumX = 578,
 	.i4BlockNumY = 432,
 	.iMirrorFlip = 3,
-	.i4Crop = { {16,8}, {16,8}, {16, 440}, {0, 0}, {0, 0}, {16,8}, {400, 656}, {400, 656}, {16, 440}, {0, 0}},
+	.i4Crop = { {16,8}, {0,0}, {16, 440}, {0, 0}, {0, 0}, {0, 0}, {400, 656}, {400, 656}, {16, 440}, {0, 0}},
 };
 /*hope add otp check start*/
 static int vivo_otp_read_when_power_on;
@@ -319,7 +307,6 @@ extern int MAIN_7309_otp_read(void);
 extern otp_error_code_t S5KGW3SP13PD2083F_EX_OTP_ERROR_CODE;
 MUINT32  sn_inf_main_s5kgw3sp13pd2083[13];  /*0 flag   1-12 data*/
 MUINT32  material_inf_main_s5kgw3sp13pd2083[4];  
-MUINT32  af_calib_inf_main_s5kgw3sp13pd2083[6];
 /*hope add otp check end*/
 #define HOPE_ADD_FOR_CAM_TEMPERATURE_NODE
 
@@ -4770,9 +4757,12 @@ static kal_uint32 ois_fw_check(UINT8 *params)
 	pi2c_cfg = imgsensor_i2c_get_device();
 	if (pi2c_cfg && pi2c_cfg->pinst) {
 		pr_debug("ois_: fw check start(sensor=%d i2c=%p)", imgsensor_info.sensor_id, pi2c_cfg->pinst->pi2c_client);
-		ois_interface_create(pi2c_cfg->pinst->pi2c_client, (struct device *)params, OISDRV_DW9781C, 1, 0);
-		ois_interface_dispatcher(AFIOC_X_OIS_FWUPDATE, NULL);
-		ois_interface_destroy();
+		ois_interface_create(pi2c_cfg->pinst->pi2c_client, (struct device *)params, OISDRV_DW9781C);
+		//ois_interface_dispatcher(AFIOC_X_OIS_INIT, NULL, OISDRV_DW9781C);
+		ois_interface_dispatcher(AFIOC_X_OIS_READY_CHECK, NULL, OISDRV_DW9781C);
+		ois_interface_dispatcher(AFIOC_X_OIS_FWUPDATE, NULL, OISDRV_DW9781C);
+		//ois_interface_dispatcher(AFIOC_X_OIS_DEINIT, NULL, OISDRV_DW9781C);
+		ois_interface_destroy(OISDRV_DW9781C);
 
 		pr_debug("ois_: fw check end");
 	}  else {
@@ -5775,11 +5765,9 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 	INT32 *feature_return_para_i32 = (INT32 *) feature_para;
 #endif
 
-
 	struct SET_PD_BLOCK_INFO_T *PDAFinfo;
 	struct SENSOR_WINSIZE_INFO_STRUCT *wininfo;
     	struct SENSOR_VC_INFO_STRUCT *pvcinfo;
-	struct SENSOR_RAWINFO_STRUCT *rawinfo;//vivo
 
 	MSDK_SENSOR_REG_INFO_STRUCT *sensor_reg_data =
 		(MSDK_SENSOR_REG_INFO_STRUCT *) feature_para;
@@ -6098,17 +6086,6 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 		*feature_para_len = 4;
 		break;
 
-#if 1 //vivo
-	case SENSOR_FEATURE_GET_RAW_INFO:
-		pr_debug("SENSOR_FEATURE_GET_RAW_INFO scenarioId:%d\n",
-			(UINT32) *feature_data);
-		rawinfo = (struct SENSOR_RAWINFO_STRUCT *) (uintptr_t) (*(feature_data + 1));
-		memcpy((void *)rawinfo,
-				(void *)&imgsensor_raw_info,
-				sizeof(struct SENSOR_RAWINFO_STRUCT));
-		break;
-#endif
-
 	case SENSOR_FEATURE_GET_CROP_INFO:
 		/* PK_DBG("SENSOR_FEATURE_GET_CROP_INFO scenarioId:%d\n",
 		 *	(UINT32) *feature_data);
@@ -6252,7 +6229,6 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 			    *(MUINT32 *)(uintptr_t)(*(feature_data+1)) = S5KGW3SP13PD2083F_EX_OTP_ERROR_CODE;//otp_state
 				memcpy( feature_data+2, sn_inf_main_s5kgw3sp13pd2083, sizeof(MUINT32)*13); 
 				memcpy( feature_data+10, material_inf_main_s5kgw3sp13pd2083, sizeof(MUINT32)*4); 
-				memcpy( feature_data+12, af_calib_inf_main_s5kgw3sp13pd2083, sizeof(MUINT32)*6);
 				#if 0
 						for (i = 0 ; i<12 ; i++ ){
 						printk("sn_inf_main_s5kgw3sp13pd2083[%d]= 0x%x\n", i, sn_inf_main_s5kgw3sp13pd2083[i]);

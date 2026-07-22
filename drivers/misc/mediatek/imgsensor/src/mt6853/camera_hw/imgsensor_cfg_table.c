@@ -25,7 +25,6 @@ enum IMGSENSOR_RETURN (*hw_open[IMGSENSOR_HW_ID_MAX_NUM])
 	imgsensor_hw_regulator_open,
 	imgsensor_hw_gpio_open
 };
-
 #if defined(CONFIG_MTK_CAM_PD2083F_EX)
 struct IMGSENSOR_HW_CFG imgsensor_custom_config[] = {
 	{
@@ -464,7 +463,6 @@ struct IMGSENSOR_HW_POWER_SEQ platform_power_sequence[] = {
 		IMGSENSOR_SENSOR_IDX_MAIN3,
 	},
 #endif
-
 	{NULL}
 };
 #endif

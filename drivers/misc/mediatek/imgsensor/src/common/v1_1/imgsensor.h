@@ -23,13 +23,7 @@
 #include "imgsensor_hw.h"
 
 #define IMGSENSOR_FEATURE_PARA_LEN_MAX 128000
-#define TG_INX_SUSPEND 8
 
-#if defined(CONFIG_MTK_CAM_PD2166) || defined(CONFIG_MTK_CAM_PD2123) || defined(CONFIG_MTK_CAM_PD2163) || defined(CONFIG_MTK_CAM_PD2167F_EX)|| defined (CONFIG_MTK_CAM_PD2159F_EX)
-#define PDAF_DATA_SIZE 8008
-#else
-#define PDAF_DATA_SIZE 4096
-#endif
 
 struct IMGSENSOR_STATUS {
 	u32 reserved:31;
@@ -45,8 +39,8 @@ struct IMGSENSOR {
 	struct IMGSENSOR_HW           hw;
 	struct IMGSENSOR_SENSOR       sensor[IMGSENSOR_SENSOR_IDX_MAX_NUM];
 	struct IMGSENSOR_SENSOR_LIST *psensor_list[MAX_NUM_OF_SUPPORT_SENSOR];
-	enum IMGSENSOR_RETURN (*imgsensor_oc_irq_enable)
-		(enum IMGSENSOR_SENSOR_IDX sensor_idx, bool enable);
+	enum IMGSENSOR_RETURN (*imgsensor_oc_irq_enable)(enum IMGSENSOR_SENSOR_IDX sensor_idx, bool enable);
+
 
 	atomic_t imgsensor_open_cnt;
 	enum IMGSENSOR_RETURN (*mclk_set_drive_current)
@@ -91,14 +85,8 @@ MUINT32
 imgsensor_sensor_control(
 		struct IMGSENSOR_SENSOR *psensor,
 		enum MSDK_SCENARIO_ID_ENUM ScenarioId);
-/*vivo xuyuanwen add for PD2133 PD2135 board version start*/
-#if defined(CONFIG_MTK_CAM_PD2135)
-extern struct IMGSENSOR_HW_CFG imgsensor_custom_config_PD2133[];
-extern struct IMGSENSOR_HW_CFG imgsensor_custom_config_PD2135[];
-#else
+
 extern struct IMGSENSOR_HW_CFG imgsensor_custom_config[];
-#endif
-/*vivo xuyuanwen add for PD2133 PD2135 board version end*/
 
 #endif
 

@@ -280,18 +280,6 @@ static struct imgsensor_struct imgsensor = {
 
 };
 
-#if 1 //vivo
-static struct  SENSOR_RAWINFO_STRUCT imgsensor_raw_info = {
-	 3264,//raw_weight 
- 	 2448,//raw_height
-	 2,//raw_dataBit
-	 BAYER_BGGR,//raw_colorFilterValue
-	 64,//raw_blackLevel
-	 120.0,//raw_viewAngle
-	 10,//raw_bitWidth
-	 16//raw_maxSensorGain
-};
-#endif
 
 /* Sensor output window information */
 static struct SENSOR_WINSIZE_INFO_STRUCT imgsensor_winsize_info[10] = {  
@@ -2441,7 +2429,6 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 	/*struct SET_PD_BLOCK_INFO_T *PDAFinfo;*/
 	struct SENSOR_WINSIZE_INFO_STRUCT *wininfo;
     	/*struct SENSOR_VC_INFO_STRUCT *pvcinfo;*/
-	struct SENSOR_RAWINFO_STRUCT *rawinfo;//vivo
 
 	MSDK_SENSOR_REG_INFO_STRUCT *sensor_reg_data =
 		(MSDK_SENSOR_REG_INFO_STRUCT *) feature_para;
@@ -2657,17 +2644,6 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 			*feature_return_para_32);
 		*feature_para_len = 4;
 		break;
-
-#if 1//vivo
-	case SENSOR_FEATURE_GET_RAW_INFO:
-		pr_debug("SENSOR_FEATURE_GET_RAW_INFO scenarioId:%d\n",
-			(UINT32) *feature_data);
-		rawinfo = (struct SENSOR_RAWINFO_STRUCT *) (uintptr_t) (*(feature_data + 1));
-		memcpy((void *)rawinfo,
-				(void *)&imgsensor_raw_info,
-				sizeof(struct SENSOR_RAWINFO_STRUCT));
-		break;
-#endif
 
 	case SENSOR_FEATURE_GET_CROP_INFO:
 		/* PK_DBG("SENSOR_FEATURE_GET_CROP_INFO scenarioId:%d\n",

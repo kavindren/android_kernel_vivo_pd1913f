@@ -25,6 +25,8 @@ struct GPIO_PINCTRL gpio_pinctrl_list_cam[GPIO_CTRL_STATE_MAX_NUM_CAM] = {
 	{"vcamd_off"},
 	{"vcamio_on"},
 	{"vcamio_off"},
+	{"ldo_vcamaf_on"},
+	{"ldo_vcamaf_off"},
 };
 
 #ifdef MIPI_SWITCH
@@ -37,7 +39,10 @@ struct GPIO_PINCTRL gpio_pinctrl_list_switch[GPIO_CTRL_STATE_MAX_NUM_SWITCH] = {
 #endif
 
 static struct GPIO gpio_instance;
-
+#if defined(CONFIG_MTK_CAM_PD2138F_EX)||defined(CONFIG_MTK_CAM_PD2147F_EX)||defined(CONFIG_MTK_CAM_PD2103F_EX)
+	static int count_avdd[IMGSENSOR_SENSOR_IDX_MAX_NUM] = {0};
+	static int status_avdd = 0;
+#endif
 /*
  * reset all state of gpio to default value
  */
@@ -171,7 +176,26 @@ static enum IMGSENSOR_RETURN gpio_set(
 	   pin_state < IMGSENSOR_HW_PIN_STATE_LEVEL_0 ||
 	   pin_state > IMGSENSOR_HW_PIN_STATE_LEVEL_HIGH)
 		return IMGSENSOR_RETURN_ERROR;
-
+#if defined(CONFIG_MTK_CAM_PD2138F_EX)||defined(CONFIG_MTK_CAM_PD2147F_EX)||defined(CONFIG_MTK_CAM_PD2103F_EX)
+      if(pin == IMGSENSOR_HW_PIN_AVDD && (sensor_idx == IMGSENSOR_SENSOR_IDX_MAIN || sensor_idx  == IMGSENSOR_SENSOR_IDX_MAIN2)){
+	       if(count_avdd[sensor_idx] == !!pin_state || !!pin_state == !!status_avdd){
+               count_avdd[sensor_idx] = !!pin_state;
+			   pr_err("case 1: count_avdd[main] = %d, count_avdd[main2] = %d , status_avdd = %d",\
+		count_avdd[0],count_avdd[2],status_avdd);
+			   return IMGSENSOR_RETURN_SUCCESS;
+		   }else if(count_avdd[IMGSENSOR_SENSOR_IDX_MAIN ]+count_avdd[IMGSENSOR_SENSOR_IDX_MAIN2] == 2){
+		       count_avdd[sensor_idx] = !!pin_state;
+               pr_err("case 2: count_avdd[main] = %d, count_avdd[main2] = %d , status_avdd = %d",\
+		count_avdd[0],count_avdd[2],status_avdd);
+			   return IMGSENSOR_RETURN_SUCCESS;
+	       } else {
+		        count_avdd[sensor_idx] = !!pin_state;
+			    status_avdd = !!pin_state;
+				pr_err("case 3: count_avdd[main] = %d, count_avdd[main2] = %d , status_avdd = %d",\
+		count_avdd[0],count_avdd[2],status_avdd);
+		   }
+	 }
+#endif
 	gpio_state = (pin_state > IMGSENSOR_HW_PIN_STATE_LEVEL_0)
 	    ? GPIO_STATE_H : GPIO_STATE_L;
 
@@ -191,11 +215,9 @@ static enum IMGSENSOR_RETURN gpio_set(
 		    pgpio->ppinctrl_state_cam[(unsigned int)sensor_idx][
 			((pin - IMGSENSOR_HW_PIN_PDN) << 1) + gpio_state];
 	}
-	/*pr_debug("%s : pinctrl , state indx %d\n",
-	 *	    __func__,
-	 *	    ctrl_state_offset +
-	 *	    ((pin - IMGSENSOR_HW_PIN_PDN) << 1) + gpio_state);
-	 */
+	pr_debug("%s : pinctrl , state indx %d\n",
+		    __func__,
+		    ((pin - IMGSENSOR_HW_PIN_PDN) << 1) + gpio_state);
 
 	mutex_lock(&pinctrl_mutex);
 	if (ppinctrl_state == NULL ||

@@ -20,115 +20,17 @@
 #include "imgsensor_sensor.h"
 #include "imgsensor_hw.h"
 
-/*vivo xuyuanwen add for PD2133 PD2135 board version start*/
-#if defined(CONFIG_MTK_CAM_PD2135)
-extern char *get_board_version(void);
-static char *ccm_board_version = NULL;
-#endif
-/*vivo xuyuanwen add for PD2133 PD2135 board version end*/
-u32 ois_type = 0;
-
-/*the index is consistent with enum IMGSENSOR_HW_PIN*/
-char * const imgsensor_hw_pin_names[] = {
-	"none",
-	"pdn",
-	"rst",
-	"vcama",
-	"vcamois",
-	"vmois",
-#ifdef CONFIG_REGULATOR_FAN53870
-	"plugic_en",
-#endif
-#ifdef CONFIG_REGULATOR_RT5133
-	"vcama1",
-#endif
-    "vcamaf_def",
-	"vcamd",
-	"vcamio",
-#ifdef MIPI_SWITCH
-	"mipi_switch_en",
-	"mipi_switch_sel",
-#endif
-	"mclk"
-};
-
-/*the index is consistent with enum IMGSENSOR_HW_ID*/
-char * const imgsensor_hw_id_names[] = {
-	"mclk",
-	"regulator",
-	"gpio"
-};
-
 enum IMGSENSOR_RETURN imgsensor_hw_init(struct IMGSENSOR_HW *phw)
 {
 	struct IMGSENSOR_HW_SENSOR_POWER      *psensor_pwr;
 	struct IMGSENSOR_HW_CFG               *pcust_pwr_cfg;
 	struct IMGSENSOR_HW_CUSTOM_POWER_INFO *ppwr_info;
-	unsigned int i, j, len;
+	int i, j;
 	char str_prop_name[LENGTH_FOR_SNPRINTF];
-	const char *pin_hw_id_name;
-	int ret=0;
 	struct device_node *of_node
 		= of_find_compatible_node(NULL, NULL, "mediatek,imgsensor");
 
 	mutex_init(&phw->common.pinctrl_mutex);
-
-/*vivo xuyuanwen add for PD2133 PD2135 board version start*/
-#if defined(CONFIG_MTK_CAM_PD2135)
-	ccm_board_version = get_board_version();
-	PK_INFO("ccm_board_version = %s  ccm_board_version[0] = %c\n  ", ccm_board_version, ccm_board_version[0]);
-	if('0' != ccm_board_version[0]){
-		PK_DBG("curent board is PD2133 ccm_board_version = %c\n", ccm_board_version[0]);
-		pcust_pwr_cfg = imgsensor_custom_config_PD2133;
-	}
-	else{
-		PK_DBG("curent board is PD2135 ccm_board_version = %c\n", ccm_board_version[0]);
-		pcust_pwr_cfg = imgsensor_custom_config_PD2135;
-	}
-#else
-		pcust_pwr_cfg = imgsensor_custom_config;
-#endif
-
-	/* update the imgsensor_custom_cfg by dts */
-	for (i = 0; i < IMGSENSOR_SENSOR_IDX_MAX_NUM; i++) {
-		PK_DBG("IMGSENSOR_SENSOR_IDX: %d\n", i);
-		while (pcust_pwr_cfg->sensor_idx != i &&
-		       pcust_pwr_cfg->sensor_idx != IMGSENSOR_SENSOR_IDX_NONE)
-			pcust_pwr_cfg++;
-
-		if (pcust_pwr_cfg->sensor_idx == IMGSENSOR_SENSOR_IDX_NONE)
-			continue;
-
-		ppwr_info = pcust_pwr_cfg->pwr_info;
-		while (ppwr_info->pin != IMGSENSOR_HW_PIN_NONE) {
-			memset(str_prop_name, 0, sizeof(str_prop_name));
-			snprintf(str_prop_name,
-				sizeof(str_prop_name),
-				"cam%d_pin_%s",
-				i,
-				imgsensor_hw_pin_names[ppwr_info->pin]);
-
-
-				ret = of_property_read_string(of_node, str_prop_name,&pin_hw_id_name);
-
-			if (ret == 0) {
-
-				for (j = 0; j < IMGSENSOR_HW_ID_MAX_NUM; j++) {
-					len = strlen(imgsensor_hw_id_names[j]);
-					if (strncmp(pin_hw_id_name, imgsensor_hw_id_names[j], len)
-						== 0) {
-						PK_DBG(
-							"imgsensor_hw_cfg hw_pin:%s, id name:%s, id:%d\n",
-							str_prop_name, pin_hw_id_name, j);
-						ppwr_info->id = j;
-						break;
-					}
-				}
-			}
-			ppwr_info++;
-		}
-	}
-	/* update the imgsensor_custom_cfg by dts END */
 
 	for (i = 0; i < IMGSENSOR_HW_ID_MAX_NUM; i++) {
 		if (hw_open[i] != NULL)
@@ -142,23 +44,7 @@ enum IMGSENSOR_RETURN imgsensor_hw_init(struct IMGSENSOR_HW *phw)
 	for (i = 0; i < IMGSENSOR_SENSOR_IDX_MAX_NUM; i++) {
 		psensor_pwr = &phw->sensor_pwr[i];
 
-/*vivo xuyuanwen add for PD2133 PD2135 board version start*/
-#if defined(CONFIG_MTK_CAM_PD2135)
-	ccm_board_version = get_board_version();
-	PK_INFO("ccm_board_version = %s  ccm_board_version[0] = %c\n  ", ccm_board_version, ccm_board_version[0]);
-	if('0' != ccm_board_version[0]){
-		PK_DBG("curent board is PD2133 ccm_board_version = %c\n", ccm_board_version[0]);
-		pcust_pwr_cfg = imgsensor_custom_config_PD2133;
-	}
-	else{
-		PK_DBG("curent board is PD2135 ccm_board_version = %c\n", ccm_board_version[0]);
-		pcust_pwr_cfg = imgsensor_custom_config_PD2135;
-	}
-#else
 		pcust_pwr_cfg = imgsensor_custom_config;
-#endif
-/*vivo xuyuanwen add for PD2133 PD2135 board version start*/
-
 		while (pcust_pwr_cfg->sensor_idx != i &&
 		       pcust_pwr_cfg->sensor_idx != IMGSENSOR_SENSOR_IDX_NONE)
 			pcust_pwr_cfg++;
@@ -186,11 +72,10 @@ enum IMGSENSOR_RETURN imgsensor_hw_init(struct IMGSENSOR_HW *phw)
 					"cam%d_%s",
 					i,
 					"enable_sensor");
-
 		if (of_property_read_string(
 			of_node, str_prop_name,
 			&phw->enable_sensor_by_index[i]) < 0) {
-			PK_DBG("Property cust-sensor not defined\n");
+			pr_err("Property cust-sensor not defined\n");
 			phw->enable_sensor_by_index[i] = NULL;
 		}
 	}
@@ -250,7 +135,6 @@ static enum IMGSENSOR_RETURN imgsensor_hw_power_sequence(
 	ppwr_info = ppwr_seq->pwr_info;
 
 	while (ppwr_info->pin != IMGSENSOR_HW_PIN_NONE &&
-	       ppwr_info->pin < IMGSENSOR_HW_PIN_MAX_NUM &&
 	       ppwr_info < ppwr_seq->pwr_info + IMGSENSOR_HW_POWER_INFO_MAX) {
 
 		if (pwr_status == IMGSENSOR_HW_POWER_STATUS_ON) {
@@ -337,7 +221,12 @@ enum IMGSENSOR_RETURN imgsensor_hw_power(
 		phw->enable_sensor_by_index[(uint32_t)sensor_idx] == NULL
 		? "NULL"
 		: phw->enable_sensor_by_index[(uint32_t)sensor_idx]);
-
+#if 0
+	if(phw->enable_sensor_by_index[(uint32_t)sensor_idx] == NULL) {
+		pr_err("phw->enable_sensor_by_index[(uint32_t)sensor_idx] == NULL\n");
+		return IMGSENSOR_RETURN_ERROR;
+	}
+#endif
 	if (phw->enable_sensor_by_index[(uint32_t)sensor_idx] &&
 	!strstr(phw->enable_sensor_by_index[(uint32_t)sensor_idx], curr_sensor_name)){
 			pr_err("enable_sensor_by_index = NULL\n");
@@ -364,29 +253,6 @@ enum IMGSENSOR_RETURN imgsensor_hw_power(
 			phw,
 			sensor_idx,
 			pwr_status, sensor_power_sequence, curr_sensor_name);
-
-    if(sensor_idx == IMGSENSOR_SENSOR_IDX_MAIN)  //FIXME
-    {
-    	pr_info("ois_type =%d",ois_type);
-    	if (!ois_type) {
-
-    	imgsensor_hw_power_sequence(
-				phw,
-				IMGSENSOR_SENSOR_IDX_MAIN4,
-				pwr_status,
-				sensor_power_sequence,
-				"rumbas4swois_mipi_raw");
-    	} else {
-
-    	imgsensor_hw_power_sequence(
-				phw,
-				IMGSENSOR_SENSOR_IDX_MAIN4,
-				pwr_status,
-				sensor_power_sequence,
-				"rumbas4swois_mipi_raw_3v1");
-
-		}
-    }
 
 	return IMGSENSOR_RETURN_SUCCESS;
 }

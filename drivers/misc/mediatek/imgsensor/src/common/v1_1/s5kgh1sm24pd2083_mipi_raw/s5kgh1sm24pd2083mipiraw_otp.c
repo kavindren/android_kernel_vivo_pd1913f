@@ -76,7 +76,6 @@ static int checksum;
 otp_error_code_t S5KGH1SM24PD2083F_EX_OTP_ERROR_CODE = OTP_ERROR_CODE_NORMAL;
 extern MUINT32  sn_inf_sub_s5kgh1sm24pd2083[13];
 extern MUINT32  material_inf_sub_s5kgh1sm24pd2083[4];  
-extern MUINT32  af_calib_inf_sub_s5kgh1sm24pd2083[6];
 
 static bool vivo_read_eeprom(kal_uint16 addr,  BYTE *data)
 {
@@ -232,13 +231,6 @@ int MAIN_F881_otp_read(void)
 			LOG_INF("[zxw++]AF_checksum error!!!   otp_error_code:%d\n", S5KGH1SM24PD2083F_EX_OTP_ERROR_CODE);
 			return 0;
 		}
-        af_calib_inf_sub_s5kgh1sm24pd2083[0] = (MUINT32)vivo_otp_data_s5kgh1sm24pd2083[Af_addr + 9];
-		af_calib_inf_sub_s5kgh1sm24pd2083[1] = (MUINT32)vivo_otp_data_s5kgh1sm24pd2083[Af_addr + 10];
-		af_calib_inf_sub_s5kgh1sm24pd2083[2] = (MUINT32)vivo_otp_data_s5kgh1sm24pd2083[Af_addr + 5];
-		af_calib_inf_sub_s5kgh1sm24pd2083[3] = (MUINT32)vivo_otp_data_s5kgh1sm24pd2083[Af_addr + 6];
-		af_calib_inf_sub_s5kgh1sm24pd2083[4] = (MUINT32)vivo_otp_data_s5kgh1sm24pd2083[Af_addr + 1];
-		af_calib_inf_sub_s5kgh1sm24pd2083[5] = (MUINT32)vivo_otp_data_s5kgh1sm24pd2083[Af_addr + 2];
-        LOG_INF("af1 = %d, af2= %d af3= %d af4= %d af5= %d af6= %d\n",af_calib_inf_sub_s5kgh1sm24pd2083[0],af_calib_inf_sub_s5kgh1sm24pd2083[1],af_calib_inf_sub_s5kgh1sm24pd2083[2],af_calib_inf_sub_s5kgh1sm24pd2083[3],af_calib_inf_sub_s5kgh1sm24pd2083[4],af_calib_inf_sub_s5kgh1sm24pd2083[5]);
 
 		/****AWB_checksum****/
 		checksum = 0;

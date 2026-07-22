@@ -12,11 +12,19 @@
  */
 
 #include "regulator.h"
-
+#ifdef IMGSENSOR_OC_ENABLE
+#include <mt-plat/aee.h>
+#include <asm/siginfo.h>
+#include <linux/rcupdate.h>
+#include <linux/sched.h>
+#include <linux/sched/signal.h>
+#include "upmu_common.h" 
+#endif
 
 static const int regulator_voltage[] = {
 	REGULATOR_VOLTAGE_0,
 	REGULATOR_VOLTAGE_1000,
+	REGULATOR_VOLTAGE_1050,
 	REGULATOR_VOLTAGE_1100,
 	REGULATOR_VOLTAGE_1200,
 	REGULATOR_VOLTAGE_1210,
@@ -30,11 +38,105 @@ static const int regulator_voltage[] = {
 
 struct REGULATOR_CTRL regulator_control[REGULATOR_TYPE_MAX_NUM] = {
 	{"vcama"},
+	{"vcamois"},	
 	{"vcamd"},
 	{"vcamio"},
 };
 
+#if defined(CONFIG_MTK_CAM_PD2062F_EX)
+struct REGULATOR_CTRL regulator_control_b[REGULATOR_TYPE_MAX_NUM] = {
+	{"vcama_b"},
+	{"vcamois_b"},
+	{"vcamd_b"},
+	{"vcamio"},
+};
+#endif
+
 static struct REGULATOR reg_instance;
+
+#ifdef IMGSENSOR_OC_ENABLE
+#define OCP_DAEMON_RESTART_MAX_NUM 100 // form hardware design
+static unsigned int camio_ocp_occur_count;
+static int vcamio_oc;
+enum IMGSENSOR_RETURN imgsensor_oc_interrupt_enable(
+	enum IMGSENSOR_SENSOR_IDX sensor_idx, bool enable)
+{
+	struct regulator *preg = NULL;
+	struct device *pdevice =
+		&gimgsensor.hw.common.pplatform_device->dev;
+
+	gimgsensor.status.oc = 0;
+
+	if (enable && !vcamio_oc) {
+		mdelay(5);
+		if (sensor_idx == IMGSENSOR_SENSOR_IDX_MAIN ||
+			sensor_idx == IMGSENSOR_SENSOR_IDX_SUB ||
+			sensor_idx == IMGSENSOR_SENSOR_IDX_MAIN2 ||
+			sensor_idx == IMGSENSOR_SENSOR_IDX_SUB2) {
+			
+			preg = regulator_get(pdevice, "vcamio");
+			if (preg && regulator_is_enabled(preg)) {
+				pmic_enable_interrupt(INT_VCAMIO_OC, 1,"camera");
+				vcamio_oc = 1;
+				regulator_put(preg);
+				pr_debug("[regulator] %s INT_VCAMIO_OC %d, idx %d\n",__func__, enable, sensor_idx);
+			} else
+				pr_debug("[regulator] %s fail to enable INT_VCAMIO_OC idx %d\n",__func__, sensor_idx);
+		}
+		rcu_read_lock();
+		reg_instance.pid = current->tgid;
+		rcu_read_unlock();
+	} else if(!enable && vcamio_oc){
+		reg_instance.pid = -1;
+		/* Disable interrupt before power off */
+		if (sensor_idx == IMGSENSOR_SENSOR_IDX_MAIN ||
+			sensor_idx == IMGSENSOR_SENSOR_IDX_SUB ||
+			sensor_idx == IMGSENSOR_SENSOR_IDX_MAIN2 ||
+			sensor_idx == IMGSENSOR_SENSOR_IDX_SUB2 ) {
+			pmic_enable_interrupt(INT_VCAMIO_OC, 0, "camera");
+			vcamio_oc = 0;
+			pr_debug("[regulator] %s INT_VCAMIO_OC %d, idx %d\n",__func__, enable, sensor_idx);
+		}
+	}
+
+	return IMGSENSOR_RETURN_SUCCESS;
+}
+
+static void _vcamio_oc_handler(void)
+{
+	pr_debug("[regulator]%s enter vcamio oc %d\n",__func__, gimgsensor.status.oc);
+	gimgsensor.status.oc = 1;
+	vcamio_oc = 0;
+
+	if(camio_ocp_occur_count >= OCP_DAEMON_RESTART_MAX_NUM) {
+		pr_info("ocp daemon restart count is %u >= max num %u, justreturn\n",camio_ocp_occur_count, OCP_DAEMON_RESTART_MAX_NUM);
+		return;
+	}
+
+	aee_kernel_warning("Imgsensor vcamio OC", "Over current");
+	if (reg_instance.pid != -1 && pid_task(find_get_pid(reg_instance.pid),PIDTYPE_PID) != NULL)
+		force_sig(SIGKILL, pid_task(find_get_pid(reg_instance.pid), PIDTYPE_PID));
+        reg_instance.pid = -1;
+		camio_ocp_occur_count++;
+}
+
+enum IMGSENSOR_RETURN imgsensor_oc_init(void)
+{
+	/* Register your interrupt handler of OC interrupt at first */
+	/* pmic_register_interrupt_callback(INT_VCAMA_OC, imgsensor_oc_handler1); 
+	pmic_register_interrupt_callback(INT_VCAMD_OC, imgsensor_oc_handler2); */
+	pmic_register_interrupt_callback(INT_VCAMIO_OC, _vcamio_oc_handler);
+
+	gimgsensor.status.oc  = 0;
+	gimgsensor.imgsensor_oc_irq_enable = imgsensor_oc_interrupt_enable;
+	reg_instance.pid = -1;
+ 	camio_ocp_occur_count = 0;
+	
+	return IMGSENSOR_RETURN_SUCCESS;
+}
+#endif
+
+
 
 static enum IMGSENSOR_RETURN regulator_init(
 	void *pinstance,
@@ -43,6 +145,12 @@ static enum IMGSENSOR_RETURN regulator_init(
 	struct REGULATOR *preg = (struct REGULATOR *)pinstance;
 	int type, idx, ret;
 	char str_regulator_name[LENGTH_FOR_SNPRINTF];
+	
+#if defined(CONFIG_MTK_CAM_PD2062F_EX)
+	struct REGULATOR_CTRL *regulator_c = NULL;
+	regulator_c = IS_ERR(regulator_get_optional(&pcommon->pplatform_device->dev, "cam0_vcama")) == 0 ? regulator_control:regulator_control_b;
+	pr_err("==hope cam0_vcama = %d", IS_ERR(regulator_get_optional(&pcommon->pplatform_device->dev, "cam0_vcama")));
+#endif
 
 	for (idx = IMGSENSOR_SENSOR_IDX_MIN_NUM;
 		idx < IMGSENSOR_SENSOR_IDX_MAX_NUM;
@@ -54,18 +162,31 @@ static enum IMGSENSOR_RETURN regulator_init(
 				sizeof(str_regulator_name),
 				"cam%d_%s",
 				idx,
+#if defined(CONFIG_MTK_CAM_PD2062F_EX)
+				regulator_c[type].pregulator_type);
+#else
 				regulator_control[type].pregulator_type);
+#endif
 			if (ret < 0)
 				return ret;
 			preg->pregulator[idx][type] = regulator_get(
 					&pcommon->pplatform_device->dev,
 					str_regulator_name);
+			if (IS_ERR(preg->pregulator[idx][type])) {
+                preg->pregulator[idx][type] = NULL;
+                pr_err("ERROR: regulator[%d][%d]  %s fail!\n",
+                        idx, type, str_regulator_name);
+            }
 			if (preg->pregulator[idx][type] == NULL)
-				PK_DBG("regulator[%d][%d]  %s fail!\n",
+				pr_err("regulator[%d][%d]  %s fail!\n",
 						idx, type, str_regulator_name);
 			atomic_set(&preg->enable_cnt[idx][type], 0);
 		}
 	}
+	
+	#ifdef IMGSENSOR_OC_ENABLE
+		imgsensor_oc_init();
+	#endif
 
 	return IMGSENSOR_RETURN_SUCCESS;
 }

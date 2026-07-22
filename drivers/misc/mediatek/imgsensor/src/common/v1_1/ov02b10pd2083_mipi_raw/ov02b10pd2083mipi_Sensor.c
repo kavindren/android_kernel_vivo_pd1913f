@@ -220,19 +220,6 @@ static struct imgsensor_struct imgsensor = {
 	.i2c_write_id = 0x78, /*record current sensor's i2c write id*/
 };
 
-#if 1 //vivo
-static struct  SENSOR_RAWINFO_STRUCT imgsensor_raw_info = {
-	 1600,//raw_weight 
- 	 1200,//raw_height
-	 2,//raw_dataBit
-	 BAYER_BGGR,//raw_colorFilterValue
-	 64,//raw_blackLevel
-	 81.6,//raw_viewAngle
-	 10,//raw_bitWidth
-	 10//raw_maxSensorGain
-};
-#endif
-
 /* Sensor output window information */
 static struct SENSOR_WINSIZE_INFO_STRUCT imgsensor_winsize_info[7] = {  
 	{ 1600, 1200,	 0,  0, 1600, 1200, 1600,  1200, 0000, 0000, 1600, 1200, 0,    0, 1600,  1200}, // Preview 
@@ -1838,7 +1825,6 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 	unsigned long long *feature_data = (unsigned long long *) feature_para;
 	struct SENSOR_WINSIZE_INFO_STRUCT *wininfo;
 
-	struct SENSOR_RAWINFO_STRUCT *rawinfo;//vivo
 	MSDK_SENSOR_REG_INFO_STRUCT *sensor_reg_data =
 		(MSDK_SENSOR_REG_INFO_STRUCT *) feature_para;
 
@@ -2050,17 +2036,6 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 			*feature_return_para_32);
 		*feature_para_len = 4;
 		break;
-
-#if 1//vivo
-	case SENSOR_FEATURE_GET_RAW_INFO:
-		pr_debug("SENSOR_FEATURE_GET_RAW_INFO scenarioId:%d\n",
-			(UINT32) *feature_data);
-		rawinfo = (struct SENSOR_RAWINFO_STRUCT *) (uintptr_t) (*(feature_data + 1));
-		memcpy((void *)rawinfo,
-				(void *)&imgsensor_raw_info,
-				sizeof(struct SENSOR_RAWINFO_STRUCT));
-		break;
-#endif
 
 	case SENSOR_FEATURE_GET_CROP_INFO:
 		/* PK_DBG("SENSOR_FEATURE_GET_CROP_INFO scenarioId:%d\n",

@@ -42,7 +42,8 @@ enum IMGSENSOR_RETURN imgsensor_hw_init(struct IMGSENSOR_HW *phw)
 	char str_prop_name[LENGTH_FOR_SNPRINTF];
 	struct device_node *of_node
 		= of_find_compatible_node(NULL, NULL, "mediatek,camera_hw");
-
+	printk("zxw imgsensor_hw_init start");
+	
 	for (i = 0; i < IMGSENSOR_HW_ID_MAX_NUM; i++) {
 		if (hw_open[i] != NULL)
 			(hw_open[i])(&phw->pdev[i]);
@@ -106,7 +107,7 @@ static enum IMGSENSOR_RETURN imgsensor_hw_power_sequence(
 	struct IMGSENSOR_HW_DEVICE       *pdev;
 	int                               pin_cnt = 0;
 
-/*	while (ppwr_seq < ppower_sequence + IMGSENSOR_HW_SENSOR_MAX_NUM &&
+	while (ppwr_seq < ppower_sequence + IMGSENSOR_HW_SENSOR_MAX_NUM &&
 		ppwr_seq->name != NULL) {
 		if (!strcmp(ppwr_seq->name, PLATFORM_POWER_SEQ_NAME)) {
 			if (sensor_idx == ppwr_seq->_idx)
@@ -120,24 +121,25 @@ static enum IMGSENSOR_RETURN imgsensor_hw_power_sequence(
 
 	if (ppwr_seq->name == NULL)
 		return IMGSENSOR_RETURN_ERROR;
-*/
+
 
 	ppwr_info = ppwr_seq->pwr_info;
 
 	while (ppwr_info->pin != IMGSENSOR_HW_PIN_NONE &&
-	       ppwr_info->pin < IMGSENSOR_HW_PIN_MAX_NUM &&
 		ppwr_info < ppwr_seq->pwr_info + IMGSENSOR_HW_POWER_INFO_MAX) {
 
 		if (pwr_status == IMGSENSOR_HW_POWER_STATUS_ON &&
 		   ppwr_info->pin != IMGSENSOR_HW_PIN_UNDEF) {
 			pdev = phw->pdev[psensor_pwr->id[ppwr_info->pin]];
-		/*pr_debug(
-		 *  "sensor_idx = %d, pin=%d, pin_state_on=%d, hw_id =%d\n",
-		 *  sensor_idx,
-		 *  ppwr_info->pin,
-		 *  ppwr_info->pin_state_on,
-		 * psensor_pwr->id[ppwr_info->pin]);
-		 */
+		pr_info(
+		   "sensor_idx = %d sensor_name = %s,ppwr_seq->name = %s, pin=%d, pin_state_on=%d, hw_id =%d\n",
+		   sensor_idx,
+		   pcurr_idx,
+		   ppwr_seq->name,
+		   ppwr_info->pin,
+		   ppwr_info->pin_state_on,
+		  psensor_pwr->id[ppwr_info->pin]);
+		 
 
 			if (pdev->set != NULL)
 				pdev->set(
@@ -202,7 +204,21 @@ enum IMGSENSOR_RETURN imgsensor_hw_power(
 	!strstr(phw->enable_sensor_by_index[(uint32_t)sensor_idx], curr_sensor_name))
 		return IMGSENSOR_RETURN_ERROR;
 
-
+#ifdef CONFIG_MTK_CAM_PD2103F_EX
+    if (phw->enable_sensor_by_index[(uint32_t)sensor_idx] == NULL) {
+        return IMGSENSOR_RETURN_ERROR;
+	}
+#endif
+#ifdef CONFIG_MTK_CAM_PD2138F_EX
+    if (phw->enable_sensor_by_index[(uint32_t)sensor_idx] == NULL) {
+        return IMGSENSOR_RETURN_ERROR;
+	}
+#endif
+#ifdef CONFIG_MTK_CAM_PD2147F_EX
+    if (phw->enable_sensor_by_index[(uint32_t)sensor_idx] == NULL) {
+        return IMGSENSOR_RETURN_ERROR;
+	}
+#endif
 	ret = snprintf(str_index, sizeof(str_index), "%d", sensor_idx);
 	if (ret == 0) {
 		pr_info("Error! snprintf allocate 0");

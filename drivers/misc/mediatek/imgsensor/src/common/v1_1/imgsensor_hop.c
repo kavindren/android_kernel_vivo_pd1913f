@@ -146,7 +146,7 @@ static kal_uint32 do_hop(int flag, void *psensor)
 
 		ppsensor = (struct IMGSENSOR_SENSOR *)psensor;
 
-#if defined(CONFIG_MTK_CAM_PD2048) || defined(CONFIG_MTK_CAM_PD2159F_EX)
+#if defined(CONFIG_MTK_CAM_PD2048)
 		imgsensor_i2c_set_device(&(ppsensor->inst.i2c_cfg));
 		table_write_cmos_sensor(setting, setting_size);
 		imgsensor_i2c_set_device(NULL);

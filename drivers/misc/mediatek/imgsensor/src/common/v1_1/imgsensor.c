@@ -48,45 +48,35 @@
 #include "imgsensor_hw.h"
 #include "imgsensor_i2c.h"
 #include "imgsensor_proc.h"
-#include "imgsensor.h"
-
-#define NEED_LATE_INITCALL  /* hope add */
-
-#ifdef SENINF_N3D_SUPPORT
-#include "n3d_fsync/n3d_if.h"
+#ifdef IMGSENSOR_OC_ENABLE
+#include "imgsensor_oc.h"
 #endif
+#include "imgsensor.h"
+static kal_uint8 imgsensor_open_cnt;
+kal_uint8 enableMD[2] = {0,1};
 
 #if defined(CONFIG_MTK_CAM_SECURE_I2C)
 #include "imgsensor_ca.h"
 #endif
-
+#define NEED_LATE_INITCALL
 static DEFINE_MUTEX(gimgsensor_mutex);
 static DEFINE_MUTEX(gimgsensor_open_mutex);
-static u32 tg_info = TG_INX_SUSPEND;
 
 struct IMGSENSOR gimgsensor;
-MUINT32 last_id;
-
 static struct arfcn_priv arfcn[4] = {{MODEM_SIM_NULL, 0, 0}};
-static kal_uint8 imgsensor_open_cnt;
-kal_uint8 enableMD[2] = {0,1};
 
-#ifdef CONFIG_VIVO_CHARGING_NEW_ARCH
 /*hope add for notice mt6360 pmic start*/
 extern void cam_notify_status_to_charge(bool runing);
 /*hope add for notice mt6360 pmic end*/
-#endif
-/*vivo xuyuanwen add for PD2133 PD2135 board version start*/
-#if defined(CONFIG_MTK_CAM_PD2135)
-extern char *get_board_version(void);
-static char *ccm_board_version = NULL;
-#endif
-/*vivo xuyuanwen add for PD2133 PD2135 board version end*/
 
-/*chenhan add for ois*/
-int fw_update_debug = 1;
-module_param(fw_update_debug, int, 0644);
-/*add end*/
+
+#if defined(CONFIG_MTK_CAM_PD1986)
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
+int GPIO64;
+int gpio64_value;
+#endif
+
 /******************************************************************************
  * Profiling
  ******************************************************************************/
@@ -229,11 +219,6 @@ static int imgsensor_sensor_changefreq(int index)
 
 }
 
-u32 get_tg_info(void)
-{
-	return tg_info;
-}
-
 MINT32 imgsensor_sensor_open(struct IMGSENSOR_SENSOR *psensor)
 {
 	MINT32 ret = ERROR_NONE;
@@ -255,23 +240,19 @@ MINT32 imgsensor_sensor_open(struct IMGSENSOR_SENSOR *psensor)
 
 	if (psensor_func && psensor_func->SensorOpen && psensor_inst) {
 
-#ifdef CONFIG_VIVO_CHARGING_NEW_ARCH
-#if (!defined(CONFIG_MTK_CAM_PD2166)) && (!defined(CONFIG_MTK_CAM_PD2166A))
 		/*hope add for notice mt6360 pmic start*/
 		pr_info("mt6360 flashlight [%s(%d)] , sensor_idx =%d\n",__func__, __LINE__, sensor_idx);
-		if (sensor_idx != IMGSENSOR_SENSOR_IDX_SUB && sensor_idx != IMGSENSOR_SENSOR_IDX_SUB2){
+		if (sensor_idx != IMGSENSOR_SENSOR_IDX_SUB){
 			cam_notify_status_to_charge(1);
 			pr_info("notify mt6360 charge [%s(%d)] , sensor_idx =%d\n",__func__, __LINE__, sensor_idx);
 		}
 		/*hope add for notice mt6360 pmic end*/
-#endif
-#endif
 		/* turn on power */
 		IMGSENSOR_PROFILE_INIT(&psensor_inst->profile_time);
 
 		if (pimgsensor->imgsensor_oc_irq_enable != NULL)
-			pimgsensor->imgsensor_oc_irq_enable(
-				psensor->inst.sensor_idx, false);
+			pimgsensor->imgsensor_oc_irq_enable(psensor->inst.sensor_idx, false);
+
 
 		ret = imgsensor_hw_power(&pimgsensor->hw,
 				psensor,
@@ -284,11 +265,11 @@ MINT32 imgsensor_sensor_open(struct IMGSENSOR_SENSOR *psensor)
 
 		IMGSENSOR_PROFILE(&psensor_inst->profile_time,
 			"kdCISModulePowerOn");
-			
+
 		if (pimgsensor->imgsensor_oc_irq_enable != NULL)
-			pimgsensor->imgsensor_oc_irq_enable(
-				psensor->inst.sensor_idx, true);
-				
+			pimgsensor->imgsensor_oc_irq_enable(psensor->inst.sensor_idx, true);
+
+
 		imgsensor_mutex_lock(psensor_inst);
 
 		psensor_func->psensor_inst = psensor_inst;
@@ -322,6 +303,7 @@ MINT32 imgsensor_sensor_open(struct IMGSENSOR_SENSOR *psensor)
 
 			psensor_inst->state = IMGSENSOR_STATE_OPEN;
 		}
+
 
 #ifdef CONFIG_MTK_CCU
 		ccuSensorInfo.slave_addr =
@@ -439,12 +421,7 @@ imgsensor_sensor_feature_control(
 	    psensor_inst) {
 
 		imgsensor_mutex_lock(psensor_inst);
-		if (FeatureId == SENSOR_FEATURE_GET_TEMPERATURE_VALUE &&
-		    psensor_inst->state == IMGSENSOR_STATE_CLOSE){
-			//should do nothing in close stage
-			imgsensor_mutex_unlock(psensor_inst);
-			return ret;
-		}
+
 		psensor_func->psensor_inst = psensor_inst;
 #if defined(CONFIG_MTK_CAM_SECURE_I2C)
 	PK_INFO("%s secure state %d", __func__,
@@ -466,7 +443,7 @@ imgsensor_sensor_feature_control(
 #endif
 		if (ret != ERROR_NONE)
 			PK_PR_ERR("[%s]\n", __func__);
-
+		
 if (FeatureId == SENSOR_FEATURE_SET_STREAMING_RESUME){
 	psensor_inst->streaming_state = STREAMING_ON;
 	imgsensor_sensor_changefreq(0);
@@ -563,15 +540,13 @@ MINT32 imgsensor_sensor_close(struct IMGSENSOR_SENSOR *psensor)
 	    psensor_inst) {
 
 		IMGSENSOR_PROFILE_INIT(&psensor_inst->profile_time);
-#ifdef CONFIG_VIVO_CHARGING_NEW_ARCH
-#if (!defined(CONFIG_MTK_CAM_PD2166)) && (!defined(CONFIG_MTK_CAM_PD2166A))
 	/*hope add for notice mt6360 pmic start*/
 		pr_info("mt6360 flashlight [%s(%d)] \n",__func__, __LINE__);
-		cam_notify_status_to_charge(0);
+		cam_notify_status_to_charge(0);		
 		/*hope add for notice mt6360 pmic end*/
-#endif
-#endif
+
 		imgsensor_mutex_lock(psensor_inst);
+
 
 		psensor_func->psensor_inst = psensor_inst;
 #if defined(CONFIG_MTK_CAM_SECURE_I2C)
@@ -654,33 +629,33 @@ static inline int imgsensor_check_is_alive(struct IMGSENSOR_SENSOR *psensor)
 	struct IMGSENSOR *pimgsensor = &gimgsensor;
 	struct IMGSENSOR_SENSOR_INST *psensor_inst = &psensor->inst;
 
-	#if defined(CONFIG_MTK_CAM_PD2135)
-	if (psensor->inst.sensor_idx == 5)  /*zxw add for PD2085 reduce searchsensor time*/
+	IMGSENSOR_PROFILE_INIT(&psensor_inst->profile_time);
+#if defined(CONFIG_MTK_CAM_PD2062F_EX)
+    if (psensor->inst.sensor_idx == 3)  /*hope add */
 	{
 		return ERROR_SENSOR_CONNECT_FAIL;
 	}
 	#endif
-	IMGSENSOR_PROFILE_INIT(&psensor_inst->profile_time);
+
 	IMGSENSOR_PROFILE_INIT(&psensor_inst->profile_time);
 	ret = imgsensor_hw_power(&pimgsensor->hw,
 			psensor,
 			IMGSENSOR_HW_POWER_STATUS_ON);
-
-	if (ret != IMGSENSOR_RETURN_SUCCESS)
-		return ERROR_SENSOR_CONNECT_FAIL;
-
 	if(pimgsensor->imgsensor_oc_irq_enable != NULL)
 		pimgsensor->imgsensor_oc_irq_enable(
 			psensor->inst.sensor_idx,true);
+	if(ret != IMGSENSOR_RETURN_SUCCESS)
+		return ERROR_SENSOR_CONNECT_FAIL;
 
 	imgsensor_sensor_feature_control(psensor,
 					 SENSOR_FEATURE_CHECK_SENSOR_ID,
-					 (MUINT8 *) &sensorID, &retLen);
-
+					 (MUINT8 *)&sensorID, &retLen);
+	
 	/*chenhan add for ois fw check*/
-	if (fw_update_debug)
-		imgsensor_sensor_feature_control(psensor, SENSOR_FEATURE_OIS_FW_UPDATE, (MUINT8 *)pimgsensor->dev, &retLen);
+	imgsensor_sensor_feature_control(psensor, SENSOR_FEATURE_OIS_FW_UPDATE, (MUINT8 *)pimgsensor->dev, &retLen);
 	/*add end*/
+
+
 
 	/* not implement this feature ID */
 	if (sensorID == 0 || sensorID == 0xFFFFFFFF) {
@@ -694,27 +669,9 @@ static inline int imgsensor_check_is_alive(struct IMGSENSOR_SENSOR *psensor)
 	imgsensor_hw_power(&pimgsensor->hw,
 			psensor,
 			IMGSENSOR_HW_POWER_STATUS_OFF);
-			
 	if(pimgsensor->imgsensor_oc_irq_enable != NULL)
 		pimgsensor->imgsensor_oc_irq_enable(
 			psensor->inst.sensor_idx,false);
-
-//vivo zhangxiaodong add for avdd grouned
-#if defined(CONFIG_MTK_CAM_PD2159F_EX)
-	if (sensorID==0x38e1 && gimgsensor.status.reserved==1) {
-        sensorID =0xFFFFFFFF;
-		PK_DBG("Fail to get sensor ID %x, psensor_inst->sensor_idx=%d\n", sensorID,psensor_inst->sensor_idx);
-		err = ERROR_SENSOR_CONNECT_FAIL;
-    }
-#elif defined(CONFIG_MTK_CAM_PD2167F_EX)
-       if ((sensorID==0x38e1 || sensorID==0xe138 || sensorID==0x38ef || sensorID==0xef38) && gimgsensor.status.reserved==1) {
-        sensorID =0xFFFFFFFF;
-               PK_DBG("Fail to get sensor ID %x, psensor_inst->sensor_idx=%d\n", sensorID,psensor_inst->sensor_idx);
-               err = ERROR_SENSOR_CONNECT_FAIL;
-    }
-#endif
-//vivo zhangxiaodong add for avdd grouned
-
 	IMGSENSOR_PROFILE(&psensor_inst->profile_time, "CheckIsAlive");
 
 	return err ? -EIO : err;
@@ -731,31 +688,9 @@ int imgsensor_set_driver(struct IMGSENSOR_SENSOR *psensor)
 	struct IMGSENSOR_SENSOR_INST *psensor_inst = &psensor->inst;
 
 	imgsensor_mutex_init(psensor_inst);
-	
-/*vivo xuyuanwen add for PD2133 PD2135 board version start*/
-#if defined(CONFIG_MTK_CAM_PD2135)
-	ccm_board_version = get_board_version();
-	PK_INFO("ccm_board_version = %s  ccm_board_version[0] = %c\n  ", ccm_board_version, ccm_board_version[0]);
-	if('0' != ccm_board_version[0])
-	{
-		PK_INFO("curent board is PD2133 ccm_board_version[1] = %c\n", ccm_board_version[0]);
-		imgsensor_i2c_init(&psensor_inst->i2c_cfg,
-		imgsensor_custom_config_PD2133[
-		(unsigned int)psensor_inst->sensor_idx].i2c_dev);
-	}
-	else{
-		PK_INFO("curent board is PD2135 ccm_board_version[1] = %c\n", ccm_board_version[0]);
-		imgsensor_i2c_init(&psensor_inst->i2c_cfg,
-		imgsensor_custom_config_PD2135[
-		(unsigned int)psensor_inst->sensor_idx].i2c_dev);
-	}
-#else
 	imgsensor_i2c_init(&psensor_inst->i2c_cfg,
 	imgsensor_custom_config[
 	(unsigned int)psensor_inst->sensor_idx].i2c_dev);
-#endif
-/*vivo xuyuanwen add for PD2133 PD2135 board version end*/
-	
 	imgsensor_i2c_filter_msg(&psensor_inst->i2c_cfg, true);
 
 	while (i < MAX_NUM_OF_SUPPORT_SENSOR && pimgsensor->psensor_list[i]) {
@@ -795,13 +730,13 @@ int imgsensor_set_driver(struct IMGSENSOR_SENSOR *psensor)
 	imgsensor_i2c_filter_msg(&psensor_inst->i2c_cfg, false);
 
 	return ret;
-}
+}	
 void update_wifi(struct wifi2camera_info_struct *pWifi_info)
 {
 	int ret = 0;
   if ((arfcn[2].arfcn>50019)&(pWifi_info->wifi_CH[0]<50000))//qinxiaoming: 1<=wifi normal CH <=165
   {
-	return;
+	return;	
   }else
   {
 	pr_info("changefreq: [%s(%d)]: num_of_wifi_CH=%d, wifi_CH[0]=%d, is_wifiConnected=%d, is_wifiOn=%d\n",
@@ -818,7 +753,7 @@ void update_wifi(struct wifi2camera_info_struct *pWifi_info)
       ret = imgsensor_sensor_changefreq(3);
 
 	return;
-  }
+  }	
 }
 EXPORT_SYMBOL(update_wifi);
 
@@ -830,8 +765,8 @@ static int imgsensor_update_modem(int md_id, void *data, int datalen)
 	struct rmmi_camera_arfcn_info_struct *arfcn_info;
 	int is_connected;
 	struct wifi2camera_info_struct Wifi_info;
-	int is_main_sim_NSA = 0;//��ʱֻ��������NSA��5G�ŵ����������ŵ���Ϣת����arfcn[4]���档SA 5Gֻ��һ����ʽ��������ͨ4G�ŵ��������ɡ�
-
+	int is_main_sim_NSA = 0;//暂时只对主卡的NSA的5G信道做处理，信道信息转存在arfcn[4]里面。SA 5G只有一个制式，按照普通4G信道处理即可。
+	
 	/* NOTE: only 2 sim cards a re supported. More sim cards need further development. */
 
 	/* arfcn_info = kmalloc(sizeof(struct rmmi_camera_arfcn_info_struct), GFP_KERNEL); */
@@ -843,28 +778,28 @@ static int imgsensor_update_modem(int md_id, void *data, int datalen)
 	rat = arfcn_info->rat;
 
 	if ( rat > 4 ){
-		/*rat =128 is 5G�� must 5G go to 4G*/
+		/*rat =128 is 5G， must 5G go to 4G*/
 		pr_info("from modem data changefreq: [%s(%d)] ===hope===  rat =%d\n",  __func__, __LINE__, rat);
 		rat = 4;
 
-		if (arfcn_info->is_main_sim==1){/*������ʱֻ����һ���ŵ���������NSA��5G�ŵ����������и��ð취�ٿ�����ΰ������е������*/
-			if (arfcn_info->num_of_arfcn==2){/* NSA��5Gͬʱ����4G�ŵ���5G�ŵ�����Ҫ�ֱ�������ŵ�,5G�ŵ���Ϣ����arfcn[3]��*/
+		if (arfcn_info->is_main_sim==1){/*副卡暂时只考虑一个信道，不考虑NSA的5G信道），后续有更好办法再考虑如何包含所有的情况。*/
+			if (arfcn_info->num_of_arfcn==2){/* NSA的5G同时包含4G信道和5G信道，需要分别检测干扰信道,5G信道信息存在arfcn[3]中*/
 				    is_main_sim_NSA=1;
 				   	arfcn[3].is_connected = is_connected;
 					arfcn[3].rat = rat;
 					arfcn[3].arfcn = arfcn_info->arfcn[1];
 			   }
-			   else if(arfcn_info->num_of_arfcn==1){/* SA��5Gֻ����5G�ŵ�����˰���������ͨ4G��������*/
-					is_main_sim_NSA=0;
+			   else if(arfcn_info->num_of_arfcn==1){/* SA的5G只包含5G信道，因此把它当做普通4G处理即可*/
+					is_main_sim_NSA=0;  
 					arfcn[3].is_connected = MODEM_SIM_NULL;
 			   }
 		}
 	}else if (arfcn_info->is_main_sim==1)
-	{   //����������5Gʱ����arfcn[3]��������״̬��
-		is_main_sim_NSA=0;
+	{   //当主卡不是5G时，让arfcn[3]处于无用状态。
+		is_main_sim_NSA=0; 
 		arfcn[3].is_connected = MODEM_SIM_NULL;
 	}
-
+	
 	if(rat==1)  /*GSM have two channel ,second channel is data channel must jump ccm freq, first channel is control channel not need to jump ccm freq */
 	{//qinxiaoming-tianjia
 	arfcn_j = arfcn_info->arfcn[is_connected];/* if Voice calls is_connected = 1 ,choose second channel(data channel)*/
@@ -872,11 +807,11 @@ static int imgsensor_update_modem(int md_id, void *data, int datalen)
 	arfcn_j = arfcn_info->arfcn[0];
 	else
 	{
-		// ���������AT�������󣺵�rat==3��wifi�ŵ�����ʱ�򣬰��ŵ���Ϣ��ֵ��wifi����ŵ������ҵ���update_wifi��������
+		// 覃晓明针对AT命令需求：当rat==3（wifi信道）的时候，把信道信息赋值给wifi相关信道，并且调用update_wifi（）函数
 	    Wifi_info.is_wifiConnected = arfcn_info->is_connected;
 	    Wifi_info.wifi_CH[0] = arfcn_info->arfcn[0];
 	    Wifi_info.wifi_CH[1] = arfcn_info->arfcn[1];
-	    Wifi_info.num_of_wifi_CH = arfcn_info->num_of_arfcn;
+	    Wifi_info.num_of_wifi_CH = arfcn_info->num_of_arfcn;		
 		update_wifi(&Wifi_info);
 		return ERROR_NONE;
 	}
@@ -897,7 +832,7 @@ static int imgsensor_update_modem(int md_id, void *data, int datalen)
 	arfcn[arfcn_info->is_main_sim].rat = rat;	/*rat = 1 GSM; rat = 2 WCDMA; rat = 3 wifi; rat = 4 LTE; rat = 128 5G*/
 	arfcn[arfcn_info->is_main_sim].arfcn = arfcn_j;	/*channel data is frequency data ,must compare with sensor_freq_list[][]*/
 	if (is_main_sim_NSA==1)
-	{//��������NSA��5Gʱ���ȶ�arfcn_info->is_main_sim==3��hop��
+	{//当主卡是NSA的5G时，先对arfcn_info->is_main_sim==3做hop。
 		ret = imgsensor_sensor_changefreq(3 + 1); /*4 = 5G*/
 	}
 	ret += imgsensor_sensor_changefreq(arfcn_info->is_main_sim + 1);/*sub card = 0--->1, main card = 1 -->2 ,wifi = 3*/
@@ -993,7 +928,7 @@ static inline int adopt_CAMERA_HW_GetInfo2(void *pBuf)
 	PK_DBG("[%s]Entry%d\n", __func__, pSensorGetInfo->SensorId);
 
 	for (i = MSDK_SCENARIO_ID_CAMERA_PREVIEW;
-			i < MSDK_SCENARIO_ID_CUSTOM15;
+			i < MSDK_SCENARIO_ID_CUSTOM5;
 			i++) {
 		imgsensor_sensor_get_info(psensor, i, &info, &config);
 
@@ -1027,12 +962,6 @@ static inline int adopt_CAMERA_HW_GetInfo2(void *pBuf)
 	PK_DBG("[CAMERA_HW][VD]w=0x%x, h = 0x%x\n",
 			sensor_resolution.SensorVideoWidth,
 			sensor_resolution.SensorVideoHeight);
-
-	if (pSensorGetInfo->SensorId <= last_id) {
-		memset(mtk_ccm_name, 0, camera_info_size);
-		PK_DBG("memset ok");
-	}
-	last_id = pSensorGetInfo->SensorId;
 
 	/* Add info to proc: camera_info */
 	pmtk_ccm_name = strchr(mtk_ccm_name, '\0');
@@ -1499,42 +1428,7 @@ static inline int adopt_CAMERA_HW_FeatureControl(void *pBuf)
 			*(pFeaturePara_64) = (uintptr_t) usr_ptr;
 		}
 		break;
-	case SENSOR_FEATURE_GET_RAW_INFO:
-		{
-			struct SENSOR_RAWINFO_STRUCT *pRawInfo = NULL;
-			unsigned long long *pFeaturePara_64 =
-				(unsigned long long *)pFeaturePara;
-			void *usr_ptr =
-				(void *)(uintptr_t) (*(pFeaturePara_64 + 1));
 
-			pRawInfo = kmalloc(
-				sizeof(struct SENSOR_RAWINFO_STRUCT),
-				GFP_KERNEL);
-			if (pRawInfo == NULL) {
-				kfree(pFeaturePara);
-				PK_PR_ERR(" ioctl allocate mem failed\n");
-				return -ENOMEM;
-			}
-			memset(pRawInfo,
-				0x0,
-				sizeof(struct SENSOR_RAWINFO_STRUCT));
-			*(pFeaturePara_64 + 1) = (uintptr_t) pRawInfo;
-
-			ret = imgsensor_sensor_feature_control(psensor,
-					pFeatureCtrl->FeatureId,
-					(unsigned char *)pFeaturePara,
-					(unsigned int *)&FeatureParaLen);
-
-			if (copy_to_user((void __user *)usr_ptr,
-				(void *)pRawInfo,
-				sizeof(struct SENSOR_RAWINFO_STRUCT))) {
-
-				PK_DBG("[CAMERA_HW]ERROR: copy_to_user fail\n");
-			}
-			kfree(pRawInfo);
-			*(pFeaturePara_64 + 1) = (uintptr_t) usr_ptr;
-		}
-		break;
 	case SENSOR_FEATURE_GET_CROP_INFO:
 		{
 			struct SENSOR_WINSIZE_INFO_STRUCT *pCrop = NULL;
@@ -2014,6 +1908,7 @@ static inline int adopt_CAMERA_HW_FeatureControl(void *pBuf)
 	case SENSOR_FEATURE_GET_PDAF_DATA:
 	case SENSOR_FEATURE_GET_4CELL_DATA:
 		{
+#define PDAF_DATA_SIZE 4096
 			char *pPdaf_data = NULL;
 			unsigned long long *pFeaturePara_64 =
 				(unsigned long long *)pFeaturePara;
@@ -2022,7 +1917,6 @@ static inline int adopt_CAMERA_HW_FeatureControl(void *pBuf)
 			kal_uint32 buf_sz =
 				(kal_uint32) (*(pFeaturePara_64 + 2));
 
-            pr_info("buf_size=%d PDAF_DATA_SIZE=%d\n",buf_sz,PDAF_DATA_SIZE);
 			/* buffer size exam */
 			if (buf_sz > PDAF_DATA_SIZE) {
 				kfree(pFeaturePara);
@@ -2109,32 +2003,6 @@ static inline int adopt_CAMERA_HW_FeatureControl(void *pBuf)
 	case SENSOR_FEATURE_DEBUG_IMGSENSOR:
 		imgsensor_hw_dump(&gimgsensor.hw);
 		break;
-	case SENSOR_FEATURE_SET_TG_IDX:
-{
-		unsigned long long *pFeaturePara_64 =
-				(unsigned long long *)pFeaturePara;
-		unsigned int sensor_idx = pFeatureCtrl->InvokeCamera;
-		if (sensor_idx == 0) {
-			tg_info = *pFeaturePara_64;
-		}
-
-}
-#ifdef SENINF_N3D_SUPPORT
-	case SENSOR_FEATURE_SET_STREAMING_SUSPEND:
-		ret = imgsensor_sensor_feature_control(psensor,
-					pFeatureCtrl->FeatureId,
-					(unsigned char *)pFeaturePara,
-					(unsigned int *)&FeatureParaLen);
-		set_sensor_streaming_state((int)psensor->inst.sensor_idx, 0);
-		break;
-	case SENSOR_FEATURE_SET_STREAMING_RESUME:
-		ret = imgsensor_sensor_feature_control(psensor,
-					pFeatureCtrl->FeatureId,
-					(unsigned char *)pFeaturePara,
-					(unsigned int *)&FeatureParaLen);
-		set_sensor_streaming_state((int)psensor->inst.sensor_idx, 1);
-		break;
-#endif
 	default:
 		ret = imgsensor_sensor_feature_control(psensor,
 					pFeatureCtrl->FeatureId,
@@ -2417,6 +2285,7 @@ static long imgsensor_ioctl(
 		if (_IOC_WRITE & _IOC_DIR(a_u4Command)) {
 			if (copy_from_user(pBuff, (void *)a_u4Param,
 			_IOC_SIZE(a_u4Command))) {
+				kfree(pBuff);
 				PK_DBG(
 			"[CAMERA SENSOR] ioctl copy from user failed\n");
 				i4RetValue = -EFAULT;
@@ -2444,24 +2313,20 @@ static long imgsensor_ioctl(
 	default:
 		PK_DBG("No such command %d\n", a_u4Command);
 		i4RetValue = -EPERM;
-		goto CAMERA_HW_Ioctl_EXIT;
 		break;
 	}
 
 	if ((_IOC_READ & _IOC_DIR(a_u4Command)) &&
 	    copy_to_user((void __user *)a_u4Param, pBuff,
 			_IOC_SIZE(a_u4Command))) {
+		kfree(pBuff);
 		PK_DBG("[CAMERA SENSOR] ioctl copy to user failed\n");
 		i4RetValue = -EFAULT;
 		goto CAMERA_HW_Ioctl_EXIT;
 	}
 
+	kfree(pBuff);
 CAMERA_HW_Ioctl_EXIT:
-	if (pBuff != NULL) {
-		kfree(pBuff);
-		pBuff = NULL;
-	}
-
 	return i4RetValue;
 }
 
@@ -2474,6 +2339,13 @@ static int imgsensor_open(struct inode *a_pstInode, struct file *a_pstFile)
 	atomic_inc(&pimgsensor->imgsensor_open_cnt);
 	PK_DBG("%s %d\n", __func__,
 		atomic_read(&pimgsensor->imgsensor_open_cnt));
+
+#if defined(CONFIG_MTK_CAM_PD1986)
+	PK_DBG(
+	    "%s %d, gpio64_value =%d\n",
+	    __func__,
+	    atomic_read(&pimgsensor->imgsensor_open_cnt), gpio64_value);
+#endif
 
 	mutex_unlock(&gimgsensor_open_mutex);
 	return 0;
@@ -2492,7 +2364,7 @@ static void imgsensor_release_secure_flag(void)
 static int imgsensor_release(struct inode *a_pstInode, struct file *a_pstFile)
 {
 	struct IMGSENSOR *pimgsensor = &gimgsensor;
-    enum IMGSENSOR_SENSOR_IDX i = IMGSENSOR_SENSOR_IDX_MIN_NUM;
+	enum IMGSENSOR_SENSOR_IDX i = IMGSENSOR_SENSOR_IDX_MIN_NUM;
 	
 	mutex_lock(&gimgsensor_open_mutex);
 
@@ -2504,6 +2376,7 @@ static int imgsensor_release(struct inode *a_pstInode, struct file *a_pstFile)
 		for (; i < IMGSENSOR_SENSOR_IDX_MAX_NUM; i++)
 			pimgsensor->imgsensor_oc_irq_enable(i, false);
 	}
+
 
 #ifdef CONFIG_MTK_CAM_SECURE_I2C
 		imgsensor_release_secure_flag();/* to reset sensor status */
@@ -2528,6 +2401,18 @@ static const struct file_operations gimgsensor_file_operations = {
 	.compat_ioctl   = imgsensor_compat_ioctl
 #endif
 };
+
+
+#if defined(CONFIG_MTK_CAM_PD1986)
+static void imgsensor_GPIO64(void)
+{
+	struct device_node *of_node = of_find_compatible_node(NULL, NULL, "mediatek,imgsensor");
+	if(!of_node)
+		pr_err("of_node for GPIO64 is Null.\n");
+	GPIO64 = of_get_named_gpio(of_node, "gpio64", 0);	
+	pr_err("Get GPIO64 pin=%d.\n", GPIO64);
+}
+#endif
 
 static int imgsensor_probe(struct platform_device *pplatform_device)
 {
@@ -2580,6 +2465,11 @@ static int imgsensor_probe(struct platform_device *pplatform_device)
 
 	phw->common.pplatform_device = pplatform_device;
 
+#if defined(CONFIG_MTK_CAM_PD1986)
+		imgsensor_GPIO64();
+#endif
+
+
 	imgsensor_hw_init(phw);
 	imgsensor_i2c_create();
 	imgsensor_proc_init();
@@ -2587,6 +2477,9 @@ static int imgsensor_probe(struct platform_device *pplatform_device)
 	/*chenhan add*/
 	pimgsensor->dev = pdevice;
 	/*add end*/
+
+
+
 	register_ccci_func_call_back(MD_SYS1, ID_MD_CAMERA, imgsensor_update_modem);
 
 	return 0;
@@ -2655,11 +2548,8 @@ static void __exit imgsensor_exit(void)
 {
 	platform_driver_unregister(&gimgsensor_platform_driver);
 }
-#ifdef NEED_LATE_INITCALL
-	late_initcall(imgsensor_init);
-#else
-	module_init(imgsensor_init);
-#endif
+//module_init(imgsensor_init);
+late_initcall(imgsensor_init);
 module_exit(imgsensor_exit);
 
 MODULE_DESCRIPTION("image sensor driver");

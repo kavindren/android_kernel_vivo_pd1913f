@@ -91,15 +91,7 @@ enum IMGSENSOR_RETURN imgsensor_hw_power(
 		enum IMGSENSOR_HW_POWER_STATUS pwr_status);
 enum IMGSENSOR_RETURN imgsensor_hw_dump(struct IMGSENSOR_HW *phw);
 
-/*vivo xuyuanwen add for PD2133 PD2135 board version start*/
-#if defined(CONFIG_MTK_CAM_PD2135)
-extern struct IMGSENSOR_HW_CFG imgsensor_custom_config_PD2133[];
-extern struct IMGSENSOR_HW_CFG imgsensor_custom_config_PD2135[];
-#else
 extern struct IMGSENSOR_HW_CFG imgsensor_custom_config[];
-#endif
-/*vivo xuyuanwen add for PD2133 PD2135 board version end*/
-
 extern struct IMGSENSOR_HW_POWER_SEQ platform_power_sequence[];
 extern struct IMGSENSOR_HW_POWER_SEQ sensor_power_sequence[];
 extern enum IMGSENSOR_RETURN (*hw_open[IMGSENSOR_HW_ID_MAX_NUM])

@@ -75,9 +75,7 @@ static bool vivo_read_eeprom(kal_uint16 addr,  BYTE *data)
     return true;
 }
 
-#if 0
 extern unsigned int is_atboot;
-#endif
 /*guojunzheng add*/
 int MAIN2_885A_otp_read(void)
 {
@@ -94,7 +92,7 @@ int MAIN2_885A_otp_read(void)
 
 	long long t1, t2, t3, t4, t5, t6, t, temp;
 	OV8856PD2083F_EX_OTP_ERROR_CODE = OTP_ERROR_CODE_NORMAL;
-	#if 0
+	#if 1
 	/* This operation takes a long time, we need to skip it. guojunzheng add begin */
 	if (is_atboot == 1) {
 		LOG_INF("AT mode skip vivo_otp_read\n");

@@ -22,27 +22,14 @@ struct GPIO_PINCTRL gpio_pinctrl_list_cam[
 	{"rst0"},
 	{"ldo_vcama_1"},
 	{"ldo_vcama_0"},
-	{"ldo_vcama_1p8_1"},
-	{"ldo_vcama_1p8_0"},
 	{"ldo_vcamois_1"},
 	{"ldo_vcamois_0"},
-#if defined(CONFIG_MTK_CAM_PD2135)
-	{"ldo_vcamois_dependency_1"},	/*vivo hope add for ois listening mode 2021.5.20*/
-	{"ldo_vcamois_dependency_0"},	/*vivo hope add for ois listening mode 2021.5.20*/
-#else
 	{"ldo_vmois_1"},
 	{"ldo_vmois_0"},
-#endif
 #ifdef CONFIG_REGULATOR_FAN53870
 	{"ldo_plugic_en_1"},
 	{"ldo_plugic_en_0"},
 #endif
-#ifdef CONFIG_REGULATOR_RT5133
-	{"ldo_vcama1_1"},
-	{"ldo_vcama1_0"},
-#endif
-    {"ldo_vcamaf_def_1"},
-	{"ldo_vcamaf_def_0"},
 	{"ldo_vcamd_1"},
 	{"ldo_vcamd_0"},
 	{"ldo_vcamio_1"},
@@ -58,8 +45,6 @@ struct GPIO_PINCTRL gpio_pinctrl_list_switch[
 	{"cam_mipi_switch_sel_0"}
 };
 #endif
-
-extern void gpio_dump_regs(void);
 
 static struct GPIO gpio_instance;
 
@@ -89,17 +74,11 @@ static enum IMGSENSOR_RETURN gpio_init(
 			gpio_pinctrl_list_cam[i].ppinctrl_lookup_names;
 
 			if (lookup_names) {
-				ret = snprintf(str_pinctrl_name,
+				snprintf(str_pinctrl_name,
 				sizeof(str_pinctrl_name),
 				"cam%d_%s",
 				j,
 				lookup_names);
-				if (ret < 0)
-					pr_info(
-						"ERROR:%s, snprintf err, %d\n",
-						__func__,
-						ret);
-
 				pgpio->ppinctrl_state_cam[j][i] =
 					pinctrl_lookup_state(
 						pgpio->ppinctrl,
@@ -134,7 +113,7 @@ static enum IMGSENSOR_RETURN gpio_init(
 	}
 #endif
 
-#ifdef CONFIG_REGULATOR_FAN53870
+#ifdef CONFIG_MTK_CAM_PD2083F_EX // for gpio share use by changcheng 2021.3.7
 	for (i = 0;i < GPIO_CTRL_STATE_MAX_NUM_CAM;i++) {
 		pgpio->enable_cnt[i] = 0;
 		PK_INFO("%s : gpio_init enable_cnt=%d\n",__FUNCTION__,pgpio->enable_cnt[i]);
@@ -145,12 +124,12 @@ static enum IMGSENSOR_RETURN gpio_init(
 
 static enum IMGSENSOR_RETURN gpio_release(void *pinstance)
 {
-#ifdef CONFIG_REGULATOR_FAN53870 // for gpio share use by changcheng 2021.3.7
+#ifdef CONFIG_MTK_CAM_PD2083F_EX // for gpio share use by changcheng 2021.3.7
 	int i=0;
 	struct GPIO            *pgpio            = (struct GPIO *)pinstance;
 	for (i = 0;i < GPIO_CTRL_STATE_MAX_NUM_CAM;i++) {
 		pgpio->enable_cnt[i] = 0;
-		//pr_info("%s : gpio_release enable_cnt=%d\n",__FUNCTION__,pgpio->enable_cnt[i]);
+		pr_info("%s : gpio_release enable_cnt=%d\n",__FUNCTION__,pgpio->enable_cnt[i]);
 	}
 #endif
 	return IMGSENSOR_RETURN_SUCCESS;
@@ -199,10 +178,11 @@ static enum IMGSENSOR_RETURN gpio_set(
 			((pin - IMGSENSOR_HW_PIN_PDN) << 1) + gpio_state];
 	}
 
+
 	mutex_lock(pgpio->pgpio_mutex);
 
 	if (ppinctrl_state != NULL && !IS_ERR(ppinctrl_state)) {
-#ifdef CONFIG_REGULATOR_FAN53870 // for gpio share use by changcheng 2021.3.7
+#ifdef CONFIG_MTK_CAM_PD2083F_EX // for gpio share use by changcheng 2021.3.7
 		pr_info("%s : sensor_idx =%d GPIO_STATE  pin =%d gpio_state =%d enable_cnt=%d\n",__FUNCTION__,sensor_idx,pin,gpio_state ,pgpio->enable_cnt[((pin - IMGSENSOR_HW_PIN_PDN) << 1) + GPIO_STATE_H]);
 		if ((gpio_state ==GPIO_STATE_H)&& ((pin == IMGSENSOR_HW_PIN_PLUGIC_EN) || (pin == IMGSENSOR_HW_PIN_OISVDD) ) ){
 			if (pgpio->enable_cnt[((pin - IMGSENSOR_HW_PIN_PDN) << 1) + GPIO_STATE_H] == 0) {
@@ -236,23 +216,12 @@ static enum IMGSENSOR_RETURN gpio_set(
 	return IMGSENSOR_RETURN_SUCCESS;
 }
 
-static enum IMGSENSOR_RETURN gpio_dump(void *pintance)
-{
-#ifdef DUMP_GPIO
-	PK_DBG("[sensor_dump][gpio]\n");
-	gpio_dump_regs();
-	PK_DBG("[sensor_dump][gpio] finish\n");
-#endif
-	return IMGSENSOR_RETURN_SUCCESS;
-}
-
 static struct IMGSENSOR_HW_DEVICE device = {
 	.id        = IMGSENSOR_HW_ID_GPIO,
 	.pinstance = (void *)&gpio_instance,
 	.init      = gpio_init,
 	.set       = gpio_set,
-	.release   = gpio_release,
-	.dump      = gpio_dump
+	.release   = gpio_release
 };
 
 enum IMGSENSOR_RETURN imgsensor_hw_gpio_open(

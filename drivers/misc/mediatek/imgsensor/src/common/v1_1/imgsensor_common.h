@@ -36,6 +36,10 @@
 
 #define IMGSENSOR_LEGACY_COMPAT
 
+#if defined(CONFIG_MTK_CAM_TD1909)
+#define MIPI_SWITCH
+#endif
+
 #define IMGSENSOR_TOSTRING(value)           #value
 #define IMGSENSOR_STRINGIZE(stringizedName) IMGSENSOR_TOSTRING(stringizedName)
 
@@ -49,6 +53,7 @@ enum IMGSENSOR_RETURN {
 	IMGSENSOR_RETURN_SUCCESS = 0,
 	IMGSENSOR_RETURN_ERROR   = -1,
 	IMGSENSOR_I2C_TIMEOUT = -2,//vivo lishuo add MTK patch for [H202012312161] 20210218
+	
 };
 
 #define LENGTH_FOR_SNPRINTF 256

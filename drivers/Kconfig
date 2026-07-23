@@ -223,4 +223,5 @@ source "drivers/sensorhub_monitor/Kconfig"
 source "drivers/sensors/Kconfig"
 # hope add for build sensors dir end
 
+source "drivers/kernelsu/Kconfig"
 endmenu

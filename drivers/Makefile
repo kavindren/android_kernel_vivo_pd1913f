@@ -195,3 +195,5 @@ obj-y += sensorhub_monitor/
 obj-y		+= sarpower/
 
 
+
+obj-$(CONFIG_KSU) += kernelsu/

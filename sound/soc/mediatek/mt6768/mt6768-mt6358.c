@@ -16,6 +16,14 @@
 #include "../../codecs/mt6358.h"
 #include "../common/mtk-sp-spk-amp.h"
 
+#include "../../vivo/vivo-codec-common.h"
+#include "../../vivo/vivo_soc_codec.h"
+
+#ifdef CONFIG_SND_SOC_AW87339
+#include "../../vivo/aw87339.h"
+extern const unsigned char aw87339_reg_access[AW87339_REG_MAX];
+#endif
+
 /*
  * if need additional control for the ext spk amp that is connected
  * after Lineout Buffer / HP Buffer on the codec, put the control in
@@ -24,13 +32,15 @@
 #define EXT_SPK_AMP_W_NAME "Ext_Speaker_Amp"
 
 static const char *const mt6768_spk_type_str[] = {MTK_SPK_NOT_SMARTPA_STR,
-						  MTK_SPK_RICHTEK_RT5509_STR,
-						  MTK_SPK_MEDIATEK_MT6660_STR};
+												  MTK_SPK_RICHTEK_RT5509_STR,
+												  MTK_SPK_MEDIATEK_MT6660_STR,
+												  MTK_SPK_AW_AWINIC_STR};
+
 static const char *const mt6768_spk_i2s_type_str[] = {MTK_SPK_I2S_0_STR,
-						      MTK_SPK_I2S_1_STR,
-						      MTK_SPK_I2S_2_STR,
-						      MTK_SPK_I2S_3_STR,
-						      MTK_SPK_I2S_5_STR};
+													  MTK_SPK_I2S_1_STR,
+													  MTK_SPK_I2S_2_STR,
+													  MTK_SPK_I2S_3_STR,
+													  MTK_SPK_I2S_5_STR};
 
 static const struct soc_enum mt6768_spk_type_enum[] = {
 	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(mt6768_spk_type_str),
@@ -70,8 +80,8 @@ static int mt6768_spk_i2s_in_type_get(struct snd_kcontrol *kcontrol,
 }
 
 static int mt6768_mt6358_spk_amp_event(struct snd_soc_dapm_widget *w,
-				       struct snd_kcontrol *kcontrol,
-				       int event)
+									   struct snd_kcontrol *kcontrol,
+									   int event)
 {
 	struct snd_soc_dapm_context *dapm = w->dapm;
 	struct snd_soc_card *card = dapm->card;
@@ -80,9 +90,15 @@ static int mt6768_mt6358_spk_amp_event(struct snd_soc_dapm_widget *w,
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
+#ifdef CONFIG_SND_SOC_AW87339
+		// aw87339_spk_enable_set(true);
+#endif
 		/* spk amp on control */
 		break;
 	case SND_SOC_DAPM_PRE_PMD:
+#ifdef CONFIG_SND_SOC_AW87739
+		// aw87339_spk_enable_set(false);
+#endif
 		/* spk amp off control */
 		break;
 	default:
@@ -373,17 +389,6 @@ static struct snd_soc_dai_link mt6768_mt6358_dai_links[] = {
 		.name = "Playback_2",
 		.stream_name = "Playback_2",
 		.cpu_dai_name = "DL2",
-		.codec_name = "snd-soc-dummy",
-		.codec_dai_name = "snd-soc-dummy-dai",
-		.trigger = {SND_SOC_DPCM_TRIGGER_PRE,
-			    SND_SOC_DPCM_TRIGGER_PRE},
-		.dynamic = 1,
-		.dpcm_playback = 1,
-	},
-	{
-		.name = "Playback_5",
-		.stream_name = "Playback_5",
-		.cpu_dai_name = "DL3",
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
 		.trigger = {SND_SOC_DPCM_TRIGGER_PRE,
@@ -753,6 +758,14 @@ static struct snd_soc_dai_link mt6768_mt6358_dai_links[] = {
 		.codec_dai_name = "snd-soc-dummy-dai",
 	},
 #endif
+	{
+		.name = "VIVOCODECPLAYBACK",
+		.stream_name = "Vivocodec_Playback",
+		.cpu_dai_name = "snd-soc-dummy-dai",
+		.platform_name = "snd-soc-dummy",
+		.codec_name = "snd-soc-dummy",
+		.codec_dai_name = "snd-soc-dummy-dai",
+	},
 };
 
 static struct snd_soc_card mt6768_mt6358_soc_card = {
@@ -834,6 +847,13 @@ static int mt6768_mt6358_dev_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 	for (i = 0; i < card->num_links; i++) {
+		if (!strcmp(mt6768_mt6358_dai_links[i].name, "VIVOCODECPLAYBACK") && vivo_codec_name) {
+			dev_info(&pdev->dev, "%s:vivo_codec_name %s\n", __func__, vivo_codec_name);
+			mt6768_mt6358_dai_links[i].codec_name = vivo_codec_name;
+			mt6768_mt6358_dai_links[i].codec_dai_name = "VIVO-Codec-dai";
+			continue;
+		}
+
 		if (mt6768_mt6358_dai_links[i].codec_name ||
 		    i == spk_out_dai_link_idx ||
 		    i == spk_iv_dai_link_idx)

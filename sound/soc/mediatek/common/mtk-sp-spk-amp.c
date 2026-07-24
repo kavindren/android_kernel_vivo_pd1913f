@@ -28,7 +28,8 @@
 #endif /* CONFIG_SND_SOC_MT6660 */
 
 #ifdef CONFIG_SND_SOC_AW87339
-#include "aw87339.h"
+#include "../../vivo/aw87339.h"
+extern const unsigned char aw87339_reg_access[AW87339_REG_MAX];
 #endif
 #include "../../vivo/vivo-codec-common.h"
 
@@ -154,7 +155,7 @@ EXPORT_SYMBOL(mtk_spk_get_i2s_in_type);
 int mtk_ext_spk_get_status(void)
 {
 #ifdef CONFIG_SND_SOC_AW87339
-	return aw87339_spk_status_get();
+	// return aw87339_spk_status_get();
 #else
 	return 0;
 #endif
@@ -164,7 +165,7 @@ EXPORT_SYMBOL(mtk_ext_spk_get_status);
 void mtk_ext_spk_enable(int enable)
 {
 #ifdef CONFIG_SND_SOC_AW87339
-	aw87339_spk_enable_set(enable);
+	// aw87339_spk_enable_set(enable);
 #endif
 }
 EXPORT_SYMBOL(mtk_ext_spk_enable);

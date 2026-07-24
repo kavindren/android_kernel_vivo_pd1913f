@@ -306,8 +306,8 @@ int mt65xx_leds_brightness_set(enum mt65xx_led_type type,
 	if (type < 0 || type >= TYPE_TOTAL)
 		return -1;
 
-	if (level > LED_FULL)
-		level = LED_FULL;
+	if (level > 2047)
+		level = 2047;
 	else if (level < 0)
 		level = 0;
 
@@ -475,6 +475,10 @@ static int mt65xx_leds_probe(struct platform_device *pdev)
 		g_leds_data[i]->cdev.blink_set = mt65xx_blink_set;
 
 		INIT_WORK(&g_leds_data[i]->work, mt_mt65xx_led_work);
+
+		if (strcmp(cust_led_list[i].name, "lcd-backlight") == 0) {
+			g_leds_data[i]->cdev.max_brightness = 2047;
+		}
 
 		ret = led_classdev_register(&pdev->dev, &g_leds_data[i]->cdev);
 

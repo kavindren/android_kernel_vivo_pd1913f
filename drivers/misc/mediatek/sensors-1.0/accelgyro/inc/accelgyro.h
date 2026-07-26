@@ -59,6 +59,7 @@ struct acc_control_path {
 		     int64_t maxBatchReportLatencyNs);
 	int (*flush)(void);
 	int (*set_cali)(uint8_t *data, uint8_t count);
+	int (*acc_getversion)(void);
 	bool is_report_input_direct;
 	bool is_support_batch;
 	bool is_use_common_factory;
@@ -185,6 +186,7 @@ struct gyro_control_path {
 		     int64_t maxBatchReportLatencyNs);
 	int (*flush)(void);
 	int (*set_cali)(uint8_t *data, uint8_t count);
+	int (*gyro_getversion)(void);
 	bool is_report_input_direct;
 	bool is_support_batch;
 	bool is_use_common_factory;

@@ -681,7 +681,6 @@ int acc_register_control_path(struct acc_control_path *ctl)
 	cxt->acc_ctl.set_cali = ctl->set_cali;
 	cxt->acc_ctl.is_support_batch = ctl->is_support_batch;
 	cxt->acc_ctl.is_report_input_direct = ctl->is_report_input_direct;
-
 	if (cxt->acc_ctl.enable_nodata == NULL || cxt->acc_ctl.batch == NULL ||
 	    cxt->acc_ctl.flush == NULL) {
 		pr_debug("acc register control path fail\n");

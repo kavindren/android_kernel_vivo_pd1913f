@@ -536,13 +536,9 @@ static void SCP_sensorHub_sync_time_func(unsigned long data)
 
 static int SCP_sensorHub_direct_push_work(void *data)
 {
-	int ret = 0;
-
 	for (;;) {
-		ret = wait_event_interruptible(chre_kthread_wait,
+		wait_event(chre_kthread_wait,
 			READ_ONCE(chre_kthread_wait_condition));
-		if (ret)
-			continue;
 		WRITE_ONCE(chre_kthread_wait_condition, false);
 		mark_timestamp(0, WORK_START, ktime_get_boot_ns(), 0);
 		SCP_sensorHub_read_wp_queue();
@@ -913,10 +909,58 @@ static void SCP_sensorHub_init_sensor_state(void)
 
 	mSensorState[SENSOR_TYPE_SAR].sensorType = SENSOR_TYPE_SAR;
 	mSensorState[SENSOR_TYPE_SAR].timestamp_filter = false;
+
+	mSensorState[SENSOR_TYPE_SAR_SECONDARY].sensorType =
+		SENSOR_TYPE_SAR_SECONDARY;
+	mSensorState[SENSOR_TYPE_SAR_SECONDARY].timestamp_filter = false;
+
+	mSensorState[SENSOR_TYPE_ANGLE_JUDGE].sensorType = SENSOR_TYPE_ANGLE_JUDGE;
+	mSensorState[SENSOR_TYPE_ANGLE_JUDGE].rate = SENSOR_RATE_ONCHANGE;
+	mSensorState[SENSOR_TYPE_ANGLE_JUDGE].timestamp_filter = false;
+
+	mSensorState[SENSOR_TYPE_AMD].sensorType = SENSOR_TYPE_AMD;
+	mSensorState[SENSOR_TYPE_AMD].rate = SENSOR_RATE_ONCHANGE;
+	mSensorState[SENSOR_TYPE_AMD].timestamp_filter = false;
+
+	mSensorState[SENSOR_TYPE_RAISEUP_DETECT].sensorType = SENSOR_TYPE_RAISEUP_DETECT;
+	mSensorState[SENSOR_TYPE_RAISEUP_DETECT].rate = SENSOR_RATE_ONCHANGE;
+	mSensorState[SENSOR_TYPE_RAISEUP_DETECT].timestamp_filter = false;
+
+	mSensorState[SENSOR_TYPE_PUTDOWN_DETECT].sensorType = SENSOR_TYPE_PUTDOWN_DETECT;
+	mSensorState[SENSOR_TYPE_PUTDOWN_DETECT].rate = SENSOR_RATE_ONCHANGE;
+	mSensorState[SENSOR_TYPE_PUTDOWN_DETECT].timestamp_filter = false;
+
+	mSensorState[SENSOR_TYPE_ANGLE_DIRECTION].sensorType = SENSOR_TYPE_ANGLE_DIRECTION;
+	mSensorState[SENSOR_TYPE_ANGLE_DIRECTION].rate = SENSOR_RATE_ONCHANGE;
+	mSensorState[SENSOR_TYPE_ANGLE_DIRECTION].timestamp_filter = false;
+
+	mSensorState[SENSOR_TYPE_DROPDOWN_DETECT].sensorType = SENSOR_TYPE_DROPDOWN_DETECT;
+	mSensorState[SENSOR_TYPE_DROPDOWN_DETECT].rate = SENSOR_RATE_ONCHANGE;
+	mSensorState[SENSOR_TYPE_DROPDOWN_DETECT].timestamp_filter = false;
+
+	mSensorState[SENSOR_TYPE_WINDOW_ORIENTATION].sensorType = SENSOR_TYPE_WINDOW_ORIENTATION;
+	mSensorState[SENSOR_TYPE_WINDOW_ORIENTATION].rate = SENSOR_RATE_ONCHANGE;
+	mSensorState[SENSOR_TYPE_WINDOW_ORIENTATION].timestamp_filter = false;
+
+	mSensorState[SENSOR_TYPE_VIVOMOTION_DETECT].sensorType = SENSOR_TYPE_VIVOMOTION_DETECT;
+	mSensorState[SENSOR_TYPE_VIVOMOTION_DETECT].rate = SENSOR_RATE_ONCHANGE;
+	mSensorState[SENSOR_TYPE_VIVOMOTION_DETECT].timestamp_filter = false;
+
+	mSensorState[SENSOR_TYPE_SMARTPROX].sensorType = SENSOR_TYPE_SMARTPROX;
+	mSensorState[SENSOR_TYPE_SMARTPROX].rate = SENSOR_RATE_ONCHANGE;
+	mSensorState[SENSOR_TYPE_SMARTPROX].timestamp_filter = false;
+
+	mSensorState[SENSOR_TYPE_DROP_DEPTH].sensorType = SENSOR_TYPE_DROP_DEPTH;
+	mSensorState[SENSOR_TYPE_DROP_DEPTH].rate = SENSOR_RATE_ONCHANGE;
+	mSensorState[SENSOR_TYPE_DROP_DEPTH].timestamp_filter = false;
+
+	mSensorState[SENSOR_TYPE_AMBIENT_LIGHT_SCENE].sensorType = SENSOR_TYPE_AMBIENT_LIGHT_SCENE;
+	mSensorState[SENSOR_TYPE_AMBIENT_LIGHT_SCENE].rate = SENSOR_RATE_ONCHANGE;
+	mSensorState[SENSOR_TYPE_AMBIENT_LIGHT_SCENE].timestamp_filter = false;
 }
 
 static void init_sensor_config_cmd(struct ConfigCmd *cmd,
-		uint8_t sensor_type)
+		int sensor_type)
 {
 	uint8_t alt = mSensorState[sensor_type].alt;
 	bool enable = 0;
@@ -1025,8 +1069,7 @@ static int SCP_sensorHub_flush(int handle)
 static int SCP_sensorHub_report_raw_data(struct data_unit_t *data_t)
 {
 	struct SCP_sensorHub_data *obj = obj_data;
-	int err = 0;
-	uint8_t sensor_type = 0, sensor_id = 0;
+	int err = 0, sensor_type = 0, sensor_id = 0;
 	atomic_t *p_flush_count = NULL;
 	bool raw_enable = 0;
 	int64_t raw_enable_time = 0;
@@ -1073,8 +1116,8 @@ static int SCP_sensorHub_report_raw_data(struct data_unit_t *data_t)
 static int SCP_sensorHub_report_alt_data(struct data_unit_t *data_t)
 {
 	struct SCP_sensorHub_data *obj = obj_data;
-	int err = 0;
-	uint8_t alt = 0, alt_id, sensor_type = 0, sensor_id = 0;
+	int err = 0, sensor_type = 0, sensor_id = 0, alt_id = 0;
+	uint8_t alt = 0;
 	atomic_t *p_flush_count = NULL;
 	bool alt_enable = 0;
 	int64_t alt_enable_time = 0;
@@ -1271,7 +1314,7 @@ static int sensor_send_timestamp_wake_locked(void)
 	req.set_config_req.action = SENSOR_HUB_SET_TIMESTAMP;
 	req.set_config_req.ap_timestamp = now_time;
 	req.set_config_req.arch_counter = arch_counter;
-	pr_debug("sync ap boottime=%lld\n", now_time);
+	pr_err("sync ap boottime=%lld\n", now_time);
 	len = sizeof(req.set_config_req);
 	err = scp_sensorHub_req_send(&req, &len, 1);
 	if (err < 0)
@@ -1550,8 +1593,9 @@ int sensor_get_data_from_hub(uint8_t sensorType,
 		break;
 	case ID_PROXIMITY:
 		data->time_stamp = data_t->time_stamp;
-		data->proximity_t.steps = data_t->proximity_t.steps;
-		data->proximity_t.oneshot = data_t->proximity_t.oneshot;
+		data->data[0] = data_t->data[0];
+		data->data[1] = data_t->data[1];
+		data->data[2] = data_t->data[2];
 		break;
 	case ID_PRESSURE:
 		data->time_stamp = data_t->time_stamp;
@@ -1742,9 +1786,64 @@ int sensor_get_data_from_hub(uint8_t sensorType,
 		data->sar_event.data[1] = data_t->sar_event.data[1];
 		data->sar_event.data[2] = data_t->sar_event.data[2];
 		break;
+	case ID_SAR_SECONDARY:
+		data->time_stamp = data_t->time_stamp;
+		data->sar_event.data[0] = data_t->sar_event.data[0];
+		data->sar_event.data[1] = data_t->sar_event.data[1];
+		data->sar_event.data[2] = data_t->sar_event.data[2];
+		break;
 	default:
 		err = -1;
 		break;
+	}
+	return err;
+}
+
+/* ADD by vsen team_SENSOR_DR_001 */
+int sensor_set_vsen_cmd_to_hub(uint8_t sensorType, int32_t *args, int args_len)
+{
+	/* Notice: data size should be VSEN_COMMAND_ARGS_SIZE */
+	union SCP_SENSOR_HUB_DATA req;
+	int len = 0, err = 0, index = 0;
+	pr_err("%s sensorType %d !!!\n", __func__, sensorType);
+
+	if (args_len > VSEN_COMMAND_ARGS_SIZE) {
+		pr_err("%s args size %d error!!!\n", __func__, args_len);
+		return -1;
+	}
+
+	if (atomic_read(&power_status) == SENSOR_POWER_DOWN) {
+		pr_err("scp power down, we can not access scp\n");
+		return -1;
+	}
+	req.set_cust_req.sensorType = sensorType;
+	req.set_cust_req.action = SENSOR_HUB_SET_CUST;
+	req.set_cust_req.vsenCmds.action = CUST_ACTION_VSEN_COMMAND;
+	/*Data[0] will the command*/
+	for (index = 0; index < args_len; index++)
+		req.set_cust_req.vsenCmds.data[index] = *(args + index);
+
+	len = offsetof(struct SCP_SENSOR_HUB_SET_CUST_REQ, custData)
+				+ sizeof(req.set_cust_req.vsenCmds);
+	err = scp_sensorHub_req_send(&req, &len, 1);
+	if (err == 0) {
+		if (req.set_cust_rsp.action != SENSOR_HUB_SET_CUST
+					|| 0 != req.set_cust_rsp.errCode) {
+			pr_err("scp_sensorHub_req_send failed!\n");
+			return -1;
+		}
+		if (req.set_cust_rsp.vsenCmds.action != CUST_ACTION_VSEN_COMMAND) {
+			pr_err("scp_sensorHub_req_send failed!(%d)\n", req.set_cust_rsp.vsenCmds.action);
+			return -1;
+		}
+		pr_info("%s:(CMD)0x%x (val)%d val2(%d)\n", __func__,
+			req.set_cust_rsp.vsenCmds.data[0], req.set_cust_rsp.vsenCmds.data[1],
+			req.set_cust_rsp.vsenCmds.data[2]);
+		for (index = 0; index < args_len; index++)
+			*(args + index) = req.set_cust_rsp.vsenCmds.data[index];
+
+	} else {
+		pr_err("%s error : %d\n", __func__, req.set_cust_rsp.errCode);
 	}
 	return err;
 }
@@ -1757,6 +1856,8 @@ void nanohub_register_notifier(struct notifier_block *nb)
 }
 EXPORT_SYMBOL(nanohub_register_notifier);
 #endif
+
+/* ADD by vsen team_SENSOR_DR_001 */
 
 int sensor_set_cmd_to_hub(uint8_t sensorType,
 	enum CUST_ACTION action, void *data)
@@ -2112,6 +2213,21 @@ int sensor_set_cmd_to_hub(uint8_t sensorType,
 			return -1;
 		}
 		break;
+	case ID_SAR_SECONDARY:
+		req.set_cust_req.sensorType = ID_SAR_SECONDARY;
+		req.set_cust_req.action = SENSOR_HUB_SET_CUST;
+		switch (action) {
+		case CUST_ACTION_GET_SENSOR_INFO:
+			req.set_cust_req.getInfo.action =
+				CUST_ACTION_GET_SENSOR_INFO;
+			len = offsetof(struct SCP_SENSOR_HUB_SET_CUST_REQ,
+				custData) + sizeof(req.set_cust_req.getInfo);
+			break;
+		default:
+			return -1;
+		}
+		break;
+
 	default:
 		req.set_cust_req.sensorType = sensorType;
 		req.set_cust_req.action = SENSOR_HUB_SET_CUST;
@@ -2192,14 +2308,12 @@ static void restoring_enable_sensorHub_sensor(int handle)
 
 void sensorHub_power_up_loop(void *data)
 {
-	int ret = 0, handle = 0;
+	int handle = 0;
 	struct SCP_sensorHub_data *obj = obj_data;
 	unsigned long flags = 0;
 
-	ret = wait_event_interruptible(power_reset_wait,
+	wait_event(power_reset_wait,
 		READ_ONCE(scp_system_ready) && READ_ONCE(scp_chre_ready));
-	if (ret)
-		return;
 	spin_lock_irqsave(&scp_state_lock, flags);
 	WRITE_ONCE(scp_chre_ready, false);
 	WRITE_ONCE(scp_system_ready, false);
@@ -2236,6 +2350,11 @@ void sensorHub_power_up_loop(void *data)
 	for (handle = 0; handle < ID_SENSOR_MAX_HANDLE_PLUS_ONE; handle++)
 		restoring_enable_sensorHub_sensor(handle);
 	mutex_unlock(&mSensorState_mtx);
+#ifdef CONFIG_SENSOR_HUB_MONITOR
+	if (reset_notify != NULL && reset_notify->notifier_call != NULL)
+		reset_notify->notifier_call(reset_notify, 0, NULL);
+
+#endif
 }
 
 static int sensorHub_power_up_work(void *data)

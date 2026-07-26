@@ -425,6 +425,37 @@ static ssize_t mag_show_libinfo(struct device *dev,
 	return sizeof(struct mag_libinfo_t);
 }
 
+extern char *get_board_version(void);
+
+static ssize_t mag_show_hasnfc(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int i = 0, div = 0;
+	char *version = get_board_version();
+	int nfc_bit = 0;
+
+	if (strstr(CONFIG_MTK_PLATFORM, "mt6765")) {
+		nfc_bit = 3;  //PD1987F_EX
+		pr_info("platform is mt6765\n");
+	} else if (strstr(CONFIG_MTK_PLATFORM, "mt6768")) {
+		nfc_bit = 0; //PD1913 PD1934 PD1913F_EX_10.0
+		pr_info("platform is mt6768\n");
+	} else if (strstr(CONFIG_MTK_PLATFORM, "mt6771")) {
+		nfc_bit = 8; //PD1901
+		pr_info("platform is mt6771\n");
+	}
+
+	for (i = 0; i < 12; i++)
+		pr_info("board_info i:%d value:%c", i, *(version + i));
+
+	if (*(version + nfc_bit) == '0')
+		div = 1;
+
+	pr_err("has nfc: %d", div);
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", div);
+}
+
+
 static int msensor_remove(struct platform_device *pdev)
 {
 	pr_debug("%s\n", __func__);
@@ -569,6 +600,7 @@ DEVICE_ATTR(magflush, 0644, mag_show_flush, mag_store_flush);
 DEVICE_ATTR(magcali, 0644, mag_show_cali, mag_store_cali);
 DEVICE_ATTR(magdevnum, 0644, mag_show_sensordevnum, NULL);
 DEVICE_ATTR(maglibinfo, 0644, mag_show_libinfo, NULL);
+DEVICE_ATTR(maghasnfc, 0644, mag_show_hasnfc, NULL);
 
 static struct attribute *mag_attributes[] = {
 	&dev_attr_magdev.attr,
@@ -578,6 +610,7 @@ static struct attribute *mag_attributes[] = {
 	&dev_attr_magcali.attr,
 	&dev_attr_magdevnum.attr,
 	&dev_attr_maglibinfo.attr,
+	&dev_attr_maghasnfc.attr,
 	NULL
 };
 

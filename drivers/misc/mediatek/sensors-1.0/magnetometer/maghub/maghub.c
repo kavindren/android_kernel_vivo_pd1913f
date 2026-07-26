@@ -357,8 +357,10 @@ static int maghub_enable(int en)
 
 	if (en == true)
 		WRITE_ONCE(obj->android_enable, true);
-	else
+	else {
+		clean_mag_buf();
 		WRITE_ONCE(obj->android_enable, false);
+	}
 
 	res = maghub_m_setPowerMode(en);
 	if (res)
@@ -479,6 +481,13 @@ static int maghub_factory_enable_sensor(bool enabledisable,
 			return -1;
 		}
 	}
+	/* Add by vsen team Begin */
+	if (READ_ONCE(obj->android_enable) == true) {
+		/* Android framework enable mag, keep current state*/
+		pr_err("maghub factory_enable do nothing when android enable\n");
+		return 0;
+	}
+	/* Add by vsen team End */
 	err = sensor_enable_to_hub(ID_MAGNETIC, enabledisable == true ? 1 : 0);
 	if (err < 0) {
 		pr_err("sensor_enable_to_hub fail!\r\n");
@@ -492,9 +501,9 @@ static int maghub_factory_get_data(int32_t data[3], int *status)
 
 	/* get raw data */
 	err = maghub_get_data(&data[0], &data[1], &data[2], status);
-	data[0] = data[0] / CONVERT_M_DIV;
-	data[1] = data[1] / CONVERT_M_DIV;
-	data[2] = data[2] / CONVERT_M_DIV;
+	data[0] = data[0];
+	data[1] = data[1];
+	data[2] = data[2];
 
 	return err;
 }
@@ -525,13 +534,17 @@ static int maghub_factory_do_self_test(void)
 	struct maghub_ipi_data *obj = mag_ipi_data;
 
 	ret = sensor_selftest_to_hub(ID_MAGNETIC);
-	if (ret < 0)
+	if (ret < 0){
+		pr_err("sensor_selftest_to_hub failed!\n");
 		return -1;
+	}
 
 	ret = wait_for_completion_timeout(&obj->selftest_done,
 					  msecs_to_jiffies(3000));
-	if (!ret)
+	if (!ret){
+		pr_err("maghub_factory_do_self_test timeout!\n");
 		return -1;
+	}
 	return atomic_read(&obj->selftest_status);
 }
 

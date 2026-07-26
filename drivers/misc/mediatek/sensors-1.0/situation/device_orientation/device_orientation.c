@@ -1,4 +1,4 @@
-/* stationary gesture sensor driver
+/* device orientation sensor driver
  *
  * Copyright (C) 2016 MediaTek Inc.
  *
@@ -153,5 +153,5 @@ static void __exit device_orientation_exit(void)
 module_init(device_orientation_init);
 module_exit(device_orientation_exit);
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("Stationary Gesture driver");
+MODULE_DESCRIPTION("Device Orientation driver");
 MODULE_AUTHOR("qiangming.xia@mediatek.com");

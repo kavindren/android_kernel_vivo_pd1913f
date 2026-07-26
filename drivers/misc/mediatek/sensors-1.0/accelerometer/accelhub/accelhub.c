@@ -55,12 +55,18 @@ struct accelhub_ipi_data {
 	struct completion selftest_done;
 };
 
+static int acc_cali[3] = {0}; //add by vsen team for save acc calidata
+
 static struct acc_init_info accelhub_init_info;
 
 static struct accelhub_ipi_data *obj_ipi_data;
 
 static int gsensor_init_flag = -1;
 static DEFINE_SPINLOCK(calibration_lock);
+#define GSE_TAG                  "[Gsensor] "
+#define GSE_FUN(f)               pr_debug(GSE_TAG"%s\n", __func__)
+#define GSE_PR_ERR(fmt, args...)    pr_err(GSE_TAG"%s %d : "fmt, __func__, __LINE__, ##args)
+#define GSE_LOG(fmt, args...)    pr_debug(GSE_TAG fmt, ##args)
 
 static int gsensor_get_data(int *x, int *y, int *z, int *status);
 
@@ -235,6 +241,42 @@ static int accelhub_ReadSensorData(char *buf, int bufsize)
 
 	return 0;
 }
+
+/* vsen added for motion recognition */
+static int accelhub_ReadSensorData_vsen(char *buf, int bufsize)
+{
+	struct accelhub_ipi_data *obj = obj_ipi_data;
+	uint64_t time_stamp = 0;
+	struct data_unit_t data;
+	int acc[ACCELHUB_AXES_NUM];
+	int err = 0;
+	int status = 0;
+
+	if (atomic_read(&obj->suspend))
+		return -3;
+
+	if (buf == NULL)
+		return -1;
+	err = sensor_get_data_from_hub(ID_ACCELEROMETER, &data);
+	if (err < 0) {
+		GSE_PR_ERR("sensor_get_data_from_hub fail!\n");
+		return err;
+	}
+	time_stamp = data.time_stamp;
+	acc[ACCELHUB_AXIS_X] = data.accelerometer_t.x - acc_cali[0]*10;
+	acc[ACCELHUB_AXIS_Y] = data.accelerometer_t.y - acc_cali[1]*10;
+	acc[ACCELHUB_AXIS_Z] = data.accelerometer_t.z - acc_cali[2]*10;
+	status = data.accelerometer_t.status;
+	pr_err("%s %d %d %d %d %d %d\n", __func__, data.accelerometer_t.x, data.accelerometer_t.y,
+		data.accelerometer_t.z, acc_cali[0]*10, acc_cali[1]*10, acc_cali[2]*10);
+
+	sprintf(buf, "%d %d %d", acc[ACCELHUB_AXIS_X], acc[ACCELHUB_AXIS_Y], acc[ACCELHUB_AXIS_Z]);
+	if (atomic_read(&obj->trace) & ACCELHUB_TRC_IOCTL)
+		GSE_LOG("gsensor data: %s!\n", buf);
+
+	return 0;
+}
+
 static ssize_t chipinfo_show(struct device_driver *ddri, char *buf)
 {
 	char strbuf[ACCELHUB_BUFSIZE];
@@ -354,12 +396,82 @@ static ssize_t test_cali_store(struct device_driver *ddri, const char *buf,
 	return tCount;
 }
 
+static ssize_t data_store(struct device_driver *ddri, const char *buf, size_t tCount)
+{
+	s32 value[4] = {5, 5, 6, 6};
+	int i, j = 0;
+	char bufnew[30];
+
+	GSE_PR_ERR("store_sensor_cali: buf is %s\n", buf);
+	for (i = 0; i < 30; i++) {
+		bufnew[i] = *(buf + i);
+		if (*(buf+i) == '\0')
+		break;
+	}
+
+	for (i = 0; i < 30; i++) {
+		if (*(bufnew + i) == ' ') {
+			*(bufnew + i) = '\0';
+			value[0] = simple_strtol(bufnew, NULL, 10);
+			*(bufnew + i) = ' ';
+			j = i;
+			break;
+		}
+	}
+	i++;
+
+	for (; i < 30; i++) {
+		if (*(bufnew+i) == ' ') {
+			*(bufnew+i) = '\0';
+			value[1] = simple_strtol(bufnew + j + 1, NULL, 10);
+			*(bufnew + i) = ' ';
+			j = i;
+			break;
+		}
+	}
+	i++;
+
+	for (; i < 30; i++) {
+		if (*(bufnew + i) == ' ') {
+			*(bufnew + i) = '\0';
+			value[2] = simple_strtol(bufnew + j + 1, NULL, 10);
+			*(bufnew + i) = ' ';
+			j = i;
+			break;
+		}
+	}
+	i++;
+	for (; i < 30; i++) {
+		if (*(bufnew + i) == ' ' || *(bufnew + i) == '\0') {
+			*(bufnew + i) = '\0';
+			value[3] = simple_strtol(bufnew + j + 1, NULL, 10);
+			*(bufnew + i) = ' ';
+			j = i;
+			break;
+		}
+	}
+
+	GSE_PR_ERR("%s value: %d %d %d\n", __func__, value[0], value[1], value[2]);
+
+	return tCount;
+}
+
+static ssize_t data_show(struct device_driver *ddri, char *buf)
+{
+	char strbuf[ACCELHUB_BUFSIZE];
+
+	accelhub_ReadSensorData_vsen(strbuf, ACCELHUB_BUFSIZE);
+	return snprintf(buf, PAGE_SIZE, "%s\n", strbuf);
+}
+
+
 static DRIVER_ATTR_RO(chipinfo);
 static DRIVER_ATTR_RO(sensordata);
 static DRIVER_ATTR_RO(cali);
 static DRIVER_ATTR_WO(trace);
 static DRIVER_ATTR_RW(chip_orientation);
 static DRIVER_ATTR_WO(test_cali);
+static DRIVER_ATTR_RW(data);
 
 static struct driver_attribute *accelhub_attr_list[] = {
 	&driver_attr_chipinfo,   /*chip information */
@@ -368,6 +480,7 @@ static struct driver_attribute *accelhub_attr_list[] = {
 	&driver_attr_trace,      /*trace log */
 	&driver_attr_chip_orientation,
 	&driver_attr_test_cali,
+	&driver_attr_data,
 };
 
 static int accelhub_create_attr(struct device_driver *driver)
@@ -511,6 +624,15 @@ static int gsensor_factory_enable_sensor(bool enabledisable,
 			return -1;
 		}
 	}
+
+	/* Add by vsen team_ACC_002 Begin */
+	if (READ_ONCE(obj->android_enable) == true) {
+		/* Android framework enable acc, keep current state*/
+		pr_err("gsensor factory_enable do nothing when android enable\n");
+		return 0;
+	}
+	/* Add by vsen team_ACC_002 End */
+
 	err = sensor_enable_to_hub(ID_ACCELEROMETER, enabledisable);
 	if (err) {
 		pr_err("sensor_enable_to_hub failed!\n");
@@ -595,17 +717,43 @@ static int gsensor_factory_do_self_test(void)
 {
 	int ret = 0;
 	struct accelhub_ipi_data *obj = obj_ipi_data;
+	/* Add by vsen team_ACC_001 Begin */
+	atomic_set(&obj->selftest_status, 0);
+	/* Add by vsen team_ACC_001 End */
 
 	ret = sensor_selftest_to_hub(ID_ACCELEROMETER);
-	if (ret < 0)
+	if (ret < 0){
+		pr_err("sensor_selftest_to_hub failed!\n");
 		return -1;
+	}
 
 	ret = wait_for_completion_timeout(&obj->selftest_done,
-					  msecs_to_jiffies(3000));
-	if (!ret)
+					  msecs_to_jiffies(5000));
+	if (!ret){
+		pr_err("gsensor_factory_do_self_test timeout!\n");
 		return -1;
+	}
 	return atomic_read(&obj->selftest_status);
 }
+
+/* add by vsen team : acc_vsen_command begin */
+static int gsensorhub_factory_do_vsen_command(uint8_t sensorType, int32_t *args, int args_len)
+{
+	int err = 0;
+
+	if (args[0] == SENSOR_COMMAND_ACCEL_SET_ENG_CALI_DATA) {
+		acc_cali[0] = args[1];
+		acc_cali[1] = args[2];
+		acc_cali[2] = args[3];
+		pr_info("%s save acc_cali %d %d %d\n", __func__, acc_cali[0], acc_cali[1], acc_cali[2]);
+	}
+	err = sensor_set_vsen_cmd_to_hub(sensorType, args, args_len);
+	pr_info("%s (cmd)0x%x (val1)%d (val2)%d err(%d)\n", __func__, *(args + 0), *(args + 1), *(args + 2), err);
+	if (err < 0)
+		return -1;
+	return 0;
+}
+/* add by vsen team : acc_vsen_command end */
 
 static struct accel_factory_fops gsensor_factory_fops = {
 	.enable_sensor = gsensor_factory_enable_sensor,
@@ -616,6 +764,9 @@ static struct accel_factory_fops gsensor_factory_fops = {
 	.set_cali = gsensor_factory_set_cali,
 	.get_cali = gsensor_factory_get_cali,
 	.do_self_test = gsensor_factory_do_self_test,
+	/* add by vsen team : acc_vsen_command begin */
+	.do_vsen_commands = gsensorhub_factory_do_vsen_command,
+	/* add by vsen team : acc_vsen_command end */
 };
 
 static struct accel_factory_public gsensor_factory_device = {
@@ -635,10 +786,12 @@ static int gsensor_enable_nodata(int en)
 	int err = 0;
 	struct accelhub_ipi_data *obj = obj_ipi_data;
 
-	if (en == true)
+	if (en == true) {
 		WRITE_ONCE(obj->android_enable, true);
-	else
+	} else {
 		WRITE_ONCE(obj->android_enable, false);
+		clean_acc_buf();
+	}
 
 	if (atomic_read(&obj->suspend) == 0) {
 		err = accelhub_SetPowerMode(en);

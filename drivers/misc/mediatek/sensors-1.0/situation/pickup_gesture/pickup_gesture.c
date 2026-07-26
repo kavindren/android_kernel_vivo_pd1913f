@@ -153,5 +153,5 @@ static void __exit pkuphub_exit(void)
 module_init(pkuphub_init);
 module_exit(pkuphub_exit);
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("GLANCE_GESTURE_HUB driver");
+MODULE_DESCRIPTION("pkuphub motion driver");
 MODULE_AUTHOR("hongxu.zhao@mediatek.com");

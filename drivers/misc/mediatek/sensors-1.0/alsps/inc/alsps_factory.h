@@ -39,6 +39,7 @@
 #include "alsps.h"
 #include "cust_alsps.h"
 
+#include <linux/vsen_common.h>
 struct alsps_factory_fops {
 	int (*als_enable_sensor)(bool enable_disable,
 				 int64_t sample_periods_ms);
@@ -58,6 +59,7 @@ struct alsps_factory_fops {
 	int (*ps_get_cali)(int32_t *offset);
 	int (*ps_set_threshold)(int32_t threshold[2]);
 	int (*ps_get_threshold)(int32_t threshold[2]);
+	int (*do_vsen_commands)(uint8_t sensorType, int32_t *args, int args_len);
 };
 
 struct alsps_factory_public {

@@ -37,8 +37,17 @@
 #include <linux/slab.h>
 #include <linux/workqueue.h>
 #include <sensors_io.h>
+#include <SCP_sensorHub.h>
+
+
 
 #define ALSPS_TAG "<ALS/PS> "
+#define ALSPS_FUN(f) pr_debug(ALSPS_TAG"%s\n", __func__)
+#define ALSPS_PR_ERR(fmt, args...) pr_err(ALSPS_TAG"%s %d : "fmt, __func__, __LINE__, ##args)
+#define ALSPS_LOG(fmt, args...) pr_debug(ALSPS_TAG fmt, ##args)
+#define ALSPS_VER(fmt, args...) pr_debug(ALSPS_TAG"%s: "fmt, __func__, ##args) /* ((void)0) */
+
+
 
 #define OP_ALSPS_DELAY 0X01
 #define OP_ALSPS_ENABLE 0X02
@@ -128,6 +137,7 @@ struct alsps_drv_obj {
 			     int *actualout);
 };
 
+
 struct alsps_context {
 	struct input_dev *idev;
 	struct sensor_attr_t als_mdev;
@@ -204,4 +214,9 @@ extern int ps_data_report_t(int value, int status, int64_t time_stamp);
 extern int ps_register_control_path(struct ps_control_path *ctl);
 extern int ps_register_data_path(struct ps_data_path *data);
 extern struct platform_device *get_alsps_platformdev(void);
+
+#ifdef CONFIG_ALS_DATA_REPORT_EXTENSION
+int als_extension_data_report_t(als_event_t alsdata, int status, int64_t time_stamp);
+#endif
+
 #endif

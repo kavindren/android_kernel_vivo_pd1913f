@@ -40,9 +40,12 @@ static long alsps_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 	long err = 0;
 	void __user *ptr = (void __user *)arg;
 	int data = 0;
+	int psData[3] = {0};
 	uint32_t enable = 0;
 	int threshold_data[2] = {0, 0};
 	int als_cali = 0;
+	uint32_t cmd_args[VSEN_COMMAND_ARGS_SIZE] = {0};
+	int brightness = 0;
 
 	if (_IOC_DIR(cmd) & _IOC_READ)
 		err = !access_ok(VERIFY_WRITE, (void __user *)arg,
@@ -79,18 +82,19 @@ static long alsps_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 	case ALSPS_GET_PS_RAW_DATA:
 		if (alsps_factory.fops != NULL &&
 		    alsps_factory.fops->ps_get_raw_data != NULL) {
-			err = alsps_factory.fops->ps_get_raw_data(&data);
+			err = alsps_factory.fops->ps_get_raw_data(psData);
 			if (err < 0) {
 				pr_err(
 					"ALSPS_GET_PS_RAW_DATA read data fail!\n");
 				return -EINVAL;
 			}
-			if (copy_to_user(ptr, &data, sizeof(data)))
+			if (copy_to_user(ptr, &psData, sizeof(psData)))
 				return -EFAULT;
 		} else {
 			pr_err("ALSPS_GET_PS_RAW_DATA NULL\n");
 			return -EINVAL;
 		}
+		pr_err("ALSPS_GET_PS_RAW_DATA: %d %d %d\n", psData[0], psData[1], psData[2]);
 		return 0;
 	case ALSPS_SET_ALS_MODE:
 		if (copy_from_user(&enable, ptr, sizeof(enable)))
@@ -120,6 +124,9 @@ static long alsps_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 					"ALSPS_GET_ALS_RAW_DATA read data fail!\n");
 				return -EINVAL;
 			}
+
+			pr_err("alsps ALSPS_GET_ALS_RAW_DATA data = %d\n", data);
+
 			if (copy_to_user(ptr, &data, sizeof(data)))
 				return -EFAULT;
 		} else {
@@ -152,6 +159,43 @@ static long alsps_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 			}
 		} else {
 			pr_err("ALSPS_ALS_SET_CALI NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+	case ALSPS_IOCTL_GET_ALS_REG_DATA:
+		if (copy_from_user(&cmd_args, ptr, sizeof(cmd_args)))
+			return -EFAULT;
+		pr_info("ALSPS_IOCTL_GET_ALS_REG_DATA reg 0x%x\n", cmd_args[1]);
+		if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_LIGHT_READ_REG_DATA;
+			err = alsps_factory.fops->do_vsen_commands(ID_LIGHT, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("ALSPS_IOCTL_GET_ALS_REG_DATA read data fail!\n");
+				return -EINVAL;
+			}
+			pr_info("ALSPS_IOCTL_GET_ALS_REG_DATA reg: 0x%x val: 0x%x\n", cmd_args[1], cmd_args[2]);
+			if (copy_to_user(ptr, &cmd_args, sizeof(cmd_args)))
+				return -EFAULT;
+		} else {
+			pr_err("ALSPS_IOCTL_GET_ALS_REG_DATA NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+	case ALSPS_IOCTL_SET_ALS_REG_DATA:
+		if (copy_from_user(&cmd_args, ptr, sizeof(cmd_args)))
+			return -EFAULT;
+		pr_info("ALSPS_IOCTL_SET_ALS_REG_DATA reg 0x%x val 0x%x\n", cmd_args[1], cmd_args[2]);
+		if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_LIGHT_WRITE_REG_DATA;
+			err = alsps_factory.fops->do_vsen_commands(ID_LIGHT, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("ALSPS_IOCTL_SET_ALS_REG_DATA read data fail!\n");
+				return -EINVAL;
+			}
+			if (copy_to_user(ptr, &cmd_args, sizeof(cmd_args)))
+				return -EFAULT;
+		} else {
+			pr_err("ALSPS_IOCTL_SET_ALS_REG_DATA NULL\n");
 			return -EINVAL;
 		}
 		return 0;
@@ -223,7 +267,8 @@ static long alsps_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 			return -EINVAL;
 		}
 		return 0;
-	case ALSPS_IOCTL_SET_CALI:
+	/* Remove by vsen team */
+	/* case ALSPS_IOCTL_SET_CALI:
 		if (copy_from_user(&data, ptr, sizeof(data)))
 			return -EFAULT;
 		if (alsps_factory.fops != NULL &&
@@ -237,7 +282,8 @@ static long alsps_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 			pr_err("ALSPS_IOCTL_SET_CALI NULL\n");
 			return -EINVAL;
 		}
-		return 0;
+		return 0; */
+	/* Remove by vsen team */
 	case ALSPS_IOCTL_GET_CALI:
 		if (alsps_factory.fops != NULL &&
 		    alsps_factory.fops->ps_get_cali != NULL) {
@@ -296,6 +342,512 @@ static long alsps_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 			return -EINVAL;
 		}
 		return 0;
+	/* ADD by vsen team begain*/
+	case ALSPS_IOCTL_CHECK_PS_INT:
+		if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_PROX_CHECK_INT;
+			err = alsps_factory.fops->do_vsen_commands(ID_PROXIMITY, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("ALSPS_IOCTL_CHECK_PS_INT read data fail!\n");
+				return -EINVAL;
+			}
+			data = cmd_args[1];
+			if (copy_to_user(ptr, &data, sizeof(data)))
+				return -EFAULT;
+		} else {
+			pr_err("ALSPS_IOCTL_CHECK_PS_INT NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+	case ALSPS_IOCTL_READ_PS_INT:
+		if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_PROX_READ_INT;
+			err = alsps_factory.fops->do_vsen_commands(ID_PROXIMITY, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("ALSPS_IOCTL_READ_PS_INT read data fail!\n");
+				return -EINVAL;
+			}
+			data = cmd_args[1];
+			pr_info("ALSPS_IOCTL_READ_PS_INT %d\n", data);
+			if (copy_to_user(ptr, &data, sizeof(data)))
+				return -EFAULT;
+		} else {
+			pr_err("ALSPS_IOCTL_READ_PS_INT NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+	case ALSPS_IOCTL_GET_PS_DATA_RANGE:
+		if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_PROX_GET_DATA_RANGE;
+			err = alsps_factory.fops->do_vsen_commands(ID_PROXIMITY, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("ALSPS_IOCTL_GET_PS_DATA_RANGE read data fail!\n");
+				return -EINVAL;
+			}
+			data = cmd_args[1];
+			pr_info("ALSPS_IOCTL_GET_PS_DATA_RANGE %d\n", data);
+			if (copy_to_user(ptr, &data, sizeof(data)))
+				return -EFAULT;
+		} else {
+			pr_err("ALSPS_IOCTL_GET_PS_DATA_RANGE NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+	case ALSPS_IOCTL_GET_PS_STATUS:
+		if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_PROX_GET_STATUS;
+			err = alsps_factory.fops->do_vsen_commands(ID_PROXIMITY, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("ALSPS_IOCTL_GET_PS_STATUS read data fail!\n");
+				return -EINVAL;
+			}
+			data = cmd_args[1];
+			pr_info("ALSPS_IOCTL_GET_PS_STATUS %d\n", data);
+			if (copy_to_user(ptr, &data, sizeof(data)))
+				return -EFAULT;
+		} else {
+			pr_err("ALSPS_IOCTL_GET_PS_STATUS NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+	case ALSPS_IOCTL_GET_PS_REG_DATA:
+		if (copy_from_user(&cmd_args, ptr, sizeof(cmd_args)))
+			return -EFAULT;
+		pr_info("ALSPS_IOCTL_GET_PS_REG_DATA reg 0x%x\n", cmd_args[1]);
+		if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_PROX_READ_REG_DATA;
+			err = alsps_factory.fops->do_vsen_commands(ID_PROXIMITY, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("ALSPS_IOCTL_GET_PS_REG_DATA read data fail!\n");
+				return -EINVAL;
+			}
+			pr_info("ALSPS_IOCTL_GET_PS_REG_DATA reg: 0x%x val: 0x%x\n", cmd_args[0], cmd_args[1]);
+			if (copy_to_user(ptr, &cmd_args, sizeof(cmd_args)))
+				return -EFAULT;
+		} else {
+			pr_err("ALSPS_IOCTL_GET_PS_REG_DATA NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+	case ALSPS_IOCTL_SET_PS_REG_DATA:
+		if (copy_from_user(&cmd_args, ptr, sizeof(cmd_args)))
+			return -EFAULT;
+		pr_info("ALSPS_IOCTL_SET_PS_REG_DATA reg 0x%x val 0x%x\n", cmd_args[1], cmd_args[2]);
+		if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_PROX_WRITE_REG_DATA;
+			err = alsps_factory.fops->do_vsen_commands(ID_PROXIMITY, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("ALSPS_IOCTL_SET_PS_REG_DATA read data fail!\n");
+				return -EINVAL;
+			}
+			pr_info("ALSPS_IOCTL_SET_PS_REG_DATA reg: 0x%x val: 0x%x\n", cmd_args[0], cmd_args[1]);
+			if (copy_to_user(ptr, &cmd_args, sizeof(cmd_args)))
+				return -EFAULT;
+		} else {
+			pr_err("ALSPS_IOCTL_SET_PS_REG_DATA NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+	case ALSPS_IOCTL_SET_PS_ENG_CALI_DATA:
+		if (copy_from_user(&cmd_args, ptr, sizeof(cmd_args)))
+			return -EFAULT;
+		pr_info("ALSPS_IOCTL_SET_PS_ENG_CALI_DATA %d\n", cmd_args[1]);
+		if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_PROX_SET_ENG_CALI_DATA;
+			err = alsps_factory.fops->do_vsen_commands(ID_PROXIMITY, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("ALSPS_IOCTL_SET_PS_ENG_CALI_DATA fail!\n");
+				return -EINVAL;
+			}
+			pr_info("ALSPS_IOCTL_SET_PS_ENG_CALI_DATA args:(%d ,%d)\n", cmd_args[0], cmd_args[1]);
+			if (copy_to_user(ptr, &cmd_args, sizeof(cmd_args)))
+				return -EFAULT;
+		} else {
+			pr_err("ALSPS_IOCTL_SET_PS_ENG_CALI_DATA NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+	case ALSPS_IOCTL_NOTIFY_PS_THRES_LEVEL:
+		if (copy_from_user(&cmd_args, ptr, sizeof(cmd_args)))
+			return -EFAULT;
+		pr_info("ALSPS_IOCTL_NOTIFY_PS_THRES_LEVEL %d\n", cmd_args[0]);
+		if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_PROX_NOTIFY_THRES_LEVEL;
+			err = alsps_factory.fops->do_vsen_commands(ID_PROXIMITY, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("ALSPS_IOCTL_NOTIFY_PS_THRES_LEVEL fail!\n");
+				return -EINVAL;
+			}
+			pr_info("ALSPS_IOCTL_NOTIFY_PS_THRES_LEVEL args:(%d ,%d)\n", cmd_args[0], cmd_args[1]);
+			if (copy_to_user(ptr, &cmd_args, sizeof(cmd_args)))
+				return -EFAULT;
+		} else {
+			pr_err("ALSPS_IOCTL_NOTIFY_PS_THRES_LEVEL NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+	case ALSPS_IOCTL_GET_PS_PARA_INDEX:
+		if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+			if (copy_from_user(&data, ptr, sizeof(data)))
+				return -EFAULT;
+			cmd_args[0] = SENSOR_COMMAND_PROX_GET_PARA_INDEX;
+			err = alsps_factory.fops->do_vsen_commands(ID_PROXIMITY, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("ALSPS_IOCTL_GET_PS_PARA_INDEX read data fail!\n");
+				return -EINVAL;
+			}
+			data = cmd_args[1];
+			pr_err("ALSPS_IOCTL_GET_PS_PARA_INDEX %d\n", data);
+			if (copy_to_user(ptr, &data, sizeof(data)))
+				return -EFAULT;
+		} else {
+			pr_err("ALSPS_IOCTL_GET_PS_PARA_INDEX NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+	case ALSPS_IOCTL_GET_ALS_PARA_INDEX:
+		if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_LIGHT_GET_PARA_INDEX;
+			err = alsps_factory.fops->do_vsen_commands(ID_LIGHT, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("ALSPS_IOCTL_GET_ALS_PARA_INDEX read data fail!\n");
+				return -EINVAL;
+			}
+			data = cmd_args[1];
+			pr_err("ALSPS_IOCTL_GET_ALS_PARA_INDEX %d\n", data);
+			if (copy_to_user(ptr, &data, sizeof(data)))
+				return -EFAULT;
+		} else {
+			pr_err("ALSPS_IOCTL_GET_ALS_PARA_INDEX NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+	case ALSPS_IOCTL_BOOST_ALS_REPORT:
+		if (copy_from_user(&cmd_args, ptr, sizeof(cmd_args)))
+			return -EFAULT;
+		pr_info("ALSPS_IOCTL_BOOST_ALS_REPORT %d\n", cmd_args[1]);
+		if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_LIGHT_BOOST_NOTIRY;
+			err = alsps_factory.fops->do_vsen_commands(ID_LIGHT, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("ALSPS_IOCTL_BOOST_ALS_REPORT fail!\n");
+				return -EINVAL;
+			}
+			pr_err("ALSPS_IOCTL_BOOST_ALS_REPORT args:(%d ,%d)\n", cmd_args[0], cmd_args[1]);
+			if (copy_to_user(ptr, &cmd_args, sizeof(cmd_args)))
+				return -EFAULT;
+		} else {
+			pr_err("ALSPS_IOCTL_BOOST_ALS_REPORT NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+	case ALSPS_IOCTL_SET_PS_CHIP_RESET:
+		if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_PROX_CHIP_RESET;
+			err = alsps_factory.fops->do_vsen_commands(ID_PROXIMITY, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("SENSOR_COMMAND_PROX_CHIP_RESET read data fail!\n");
+				return -EINVAL;
+			}
+			pr_err("SENSOR_COMMAND_PROX_CHIP_RESET %d\n", data);
+		} else {
+			pr_err("SENSOR_COMMAND_PROX_CHIP_RESET NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+	case ALSPS_IOCTL_SET_PS_PRE_CALIBRATION:
+		if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_PROX_SET_PRE_CALIBRATION;
+			err = alsps_factory.fops->do_vsen_commands(ID_PROXIMITY, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("ALSPS_IOCTL_SET_PS_PRE_CALIBRATION read data fail!\n");
+				return -EINVAL;
+			}
+			pr_err("ALSPS_IOCTL_SET_PS_PRE_CALIBRATION %d\n", data);
+		} else {
+			pr_err("ALSPS_IOCTL_SET_PS_PRE_CALIBRATION NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+	case ALSPS_IOCTL_GET_PS_PRE_CALIBRATION:
+		if (copy_from_user(&cmd_args, ptr, sizeof(cmd_args)))
+			return -EFAULT;
+		pr_info("ALSPS_IOCTL_GET_PS_PRE_CALIBRATION %d\n", cmd_args[0]);
+		if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_PROX_GET_PRE_CALIBRATION;
+			err = alsps_factory.fops->do_vsen_commands(ID_PROXIMITY, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("ALSPS_IOCTL_GET_PS_PRE_CALIBRATION fail!\n");
+				return -EINVAL;
+			}
+			pr_info("ALSPS_IOCTL_GET_PS_PRE_CALIBRATION args:(%d,0x%x)\n", cmd_args[0], cmd_args[1]);
+			if (copy_to_user(ptr, &cmd_args, sizeof(cmd_args)))
+				return -EFAULT;
+		} else {
+			pr_err("ALSPS_IOCTL_GET_PS_PRE_CALIBRATION NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+	case ALSPS_IOCTL_SET_PS_CALI_OFFSET_DATA:
+		if (copy_from_user(&cmd_args, ptr, sizeof(cmd_args)))
+			return -EFAULT;
+		pr_info("ALSPS_IOCTL_SET_PS_CALI_OFFSET_DATA %d %d\n", cmd_args[0], cmd_args[1]);
+		if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_PROX_SET_CALI_OFFSET_DATA;
+			err = alsps_factory.fops->do_vsen_commands(ID_PROXIMITY, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("ALSPS_IOCTL_SET_PS_CALI_OFFSET_DATA fail!\n");
+				return -EINVAL;
+			}
+			pr_info("ALSPS_IOCTL_SET_PS_CALI_OFFSET_DATA args:(%d,%d)\n", cmd_args[0], cmd_args[1]);
+			if (copy_to_user(ptr, &cmd_args, sizeof(cmd_args)))
+				return -EFAULT;
+		} else {
+			pr_err("ALSPS_IOCTL_SET_PS_CALI_OFFSET_DATA NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+	case ALSPS_IOCTL_SET_CALI:
+		if (copy_from_user(&data, ptr, sizeof(data)))
+			return -EFAULT;
+		pr_info("ALSPS_IOCTL_SET_CALI cali data %d\n", data);
+		if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_PROX_SET_CALI_DATA;
+			cmd_args[1] = data;
+			err = alsps_factory.fops->do_vsen_commands(ID_PROXIMITY, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("ALSPS_IOCTL_SET_CALI read data fail!\n");
+				return -EINVAL;
+			}
+		} else {
+			pr_err("ALSPS_IOCTL_SET_CALI NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+	case ALSPS_IOCTL_GET_ALS_CHANNEL_DATA:
+		if (copy_from_user(&cmd_args, ptr, sizeof(cmd_args)))
+			return -EFAULT;
+		if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_LIGHT_RAW_DATA;
+			err = alsps_factory.fops->do_vsen_commands(ID_LIGHT, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("ALSPS_GET_ALS_RAW_DATA fail!\n");
+				return -EINVAL;
+			}
+			pr_err("ALSPS_GET_ALS_RAW_DATA args:(%d ,%d, %d, %d, %d, %d)\n", cmd_args[0], cmd_args[1], cmd_args[2], cmd_args[3], cmd_args[4], cmd_args[5]);
+			if (copy_to_user(ptr, &cmd_args, sizeof(cmd_args)))
+				return -EFAULT;
+		} else {
+			pr_err("ALSPS_GET_ALS_RAW_DATA NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+
+	case ALSPS_IOCTL_SET_PS_DEFAULT_CHNANEL:
+		if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_PROX_SET_DEFAUT_CHANEL;
+			err = alsps_factory.fops->do_vsen_commands(ID_PROXIMITY, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("SENSOR_COMMAND_PROX_SET_DEFAUT_CHANEL fail!\n");
+				return -EINVAL;
+			}
+			pr_err("SENSOR_COMMAND_PROX_SET_DEFAUT_CHANEL args:(%d %d)\n", cmd_args[0], cmd_args[1]);
+			if (copy_to_user(ptr, &cmd_args, sizeof(cmd_args)))
+				return -EFAULT;
+		} else {
+			pr_err("SENSOR_COMMAND_PROX_SET_DEFAUT_CHANEL NULL\n");
+			return -EINVAL;
+		}
+
+		return 0;
+
+	case ALSPS_IOCTL_SET_PS_PRE_CALI:
+		if (copy_from_user(&cmd_args, ptr, sizeof(cmd_args)))
+			return -EFAULT;
+		if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_PROX_SET_PRE_CALI;
+			err = alsps_factory.fops->do_vsen_commands(ID_PROXIMITY, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("SENSOR_COMMAND_PROX_SET_PRE_CALI fail!\n");
+				return -EINVAL;
+			}
+			pr_err("SENSOR_COMMAND_PROX_SET_PRE_CALI args:(%d %d)\n", cmd_args[0], cmd_args[1]);
+			if (copy_to_user(ptr, &cmd_args, sizeof(cmd_args)))
+				return -EFAULT;
+		} else {
+			pr_err("ALSPS_GET_ALS_RAW_DATA NULL\n");
+			return -EINVAL;
+		}
+
+		return 0;
+
+	case ALSPS_IOCTL_SET_NOTIFY_BRIGHTNESS:
+		if (copy_from_user(&brightness, ptr, sizeof(brightness)))
+			return -EFAULT;
+
+		pr_err("ALSPS_IOCTL_SET_NOTIFY_BRIGHTNESS brightness = %d", brightness);
+		if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_LIGHT_SET_NOTIFY_BRIGHTNESS;
+			cmd_args[1] = brightness;
+			err = alsps_factory.fops->do_vsen_commands(ID_LIGHT, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("SENSOR_COMMAND_ALS_SET_NOTIFY_BRIGHTNESS fail!\n");
+				return -EINVAL;
+			}
+			pr_err("SENSOR_COMMAND_ALS_SET_NOTIFY_BRIGHTNESS success\n");
+		}
+		return 0;
+
+	case ALSPS_IOCTL_SET_ENG_MODE:
+		if (copy_from_user(&cmd_args, ptr, sizeof(cmd_args)))
+			return -EFAULT;
+		ALSPS_PR_ERR("ALSPS_IOCTL_SET_ENG_MODE %d %d\n", cmd_args[0], cmd_args[1]);
+		if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_PROX_SET_ENG_MODE;
+			err = alsps_factory.fops->do_vsen_commands(ID_PROXIMITY, cmd_args, ARRAY_SIZE(cmd_args));
+			if (err < 0) {
+				ALSPS_PR_ERR("SENSOR_COMMAND_PROX_SET_ENG_MODE fail!\n");
+				return -EINVAL;
+			}
+			ALSPS_PR_ERR("SENSOR_COMMAND_PROX_SET_ENG_MODE args:(%d ,%d)\n", cmd_args[0], cmd_args[1]);
+		} else {
+			ALSPS_PR_ERR("SENSOR_COMMAND_PROX_SET_ENG_MODE NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+
+		case ALSPS_IOCTL_NOTIFY_PS_TEMP_CALI:
+			if (copy_from_user(&cmd_args, ptr, sizeof(cmd_args)))
+				return -EFAULT;
+			ALSPS_PR_ERR("ALSPS_IOCTL_NOTIFY_PS_TEMP_CALI %d %d\n", cmd_args[0], cmd_args[1]);
+			if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+				cmd_args[0] = SENSOR_COMMAND_PROX_NOTIFY_TEMP_CALI;
+				err = alsps_factory.fops->do_vsen_commands(ID_PROXIMITY, cmd_args, ARRAY_SIZE(cmd_args));
+				if (err < 0) {
+					ALSPS_PR_ERR("ALSPS_IOCTL_NOTIFY_PS_TEMP_CALI fail!\n");
+					return -EINVAL;
+				}
+				copy_to_user(ptr, &cmd_args, sizeof(cmd_args));
+				ALSPS_PR_ERR("ALSPS_IOCTL_NOTIFY_PS_TEMP_CALI args:(%d ,%d, %d)\n", cmd_args[0], cmd_args[1], cmd_args[2]);
+			} else {
+				ALSPS_PR_ERR("ALSPS_IOCTL_NOTIFY_PS_TEMP_CALI NULL\n");
+				return -EINVAL;
+			}
+			return 0;
+
+		case ALSPS_IOCTL_NOTIFY_PS_BROKEN:
+			if (copy_from_user(&cmd_args, ptr, sizeof(cmd_args)))
+				return -EFAULT;
+			ALSPS_PR_ERR("ALSPS_IOCTL_NOTIFY_PS_BROKEN %d %d\n", cmd_args[0], cmd_args[1]);
+			if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+				cmd_args[0] = SENSOR_COMMAND_PROX_NOTIFY_PS_BROKEN;
+				err = alsps_factory.fops->do_vsen_commands(ID_PROXIMITY, cmd_args, ARRAY_SIZE(cmd_args));
+				if (err < 0) {
+					ALSPS_PR_ERR("ALSPS_IOCTL_NOTIFY_PS_BROKEN fail!\n");
+					return -EINVAL;
+				}
+				copy_to_user(ptr, &cmd_args, sizeof(cmd_args));
+				ALSPS_PR_ERR("ALSPS_IOCTL_NOTIFY_PS_BROKEN args:(%d ,%d, %d)\n", cmd_args[0], cmd_args[1], cmd_args[2]);
+			} else {
+				ALSPS_PR_ERR("ALSPS_IOCTL_NOTIFY_PS_BROKEN NULL\n");
+				return -EINVAL;
+			}
+			return 0;
+
+		case ALSPS_IOCTL_SET_ALS_SAMPLE_PARAM_MODE:
+			if (copy_from_user(&cmd_args, ptr, sizeof(cmd_args)))
+				return -EFAULT;
+			ALSPS_PR_ERR("ALSPS_IOCTL_SET_ALS_SAMPLE_PARAM_MODE %d %d\n", cmd_args[0], cmd_args[1]);
+			if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+				cmd_args[0] = SENSOR_COMMAND_LIGHT_SET_SAMPLE_PARAM_MODE;
+				err = alsps_factory.fops->do_vsen_commands(ID_LIGHT, cmd_args, ARRAY_SIZE(cmd_args));
+				if (err < 0) {
+					ALSPS_PR_ERR("ALSPS_IOCTL_SET_ALS_SAMPLE_PARAM_MODE fail!\n");
+					return -EINVAL;
+				}
+				copy_to_user(ptr, &cmd_args, sizeof(cmd_args));
+				ALSPS_PR_ERR("ALSPS_IOCTL_SET_ALS_SAMPLE_PARAM_MODE args:(%d ,%d, %d)\n", cmd_args[0], cmd_args[1]);
+			} else {
+				ALSPS_PR_ERR("ALSPS_IOCTL_SET_ALS_SAMPLE_PARAM_MODE NULL\n");
+				return -EINVAL;
+			}
+			return 0;
+
+		case ALSPS_IOCTL_GET_ALS_SAMPLE_PARAM_DATA:
+			if (copy_from_user(&cmd_args, ptr, sizeof(cmd_args)))
+				return -EFAULT;
+			ALSPS_PR_ERR("ALSPS_IOCTL_GET_ALS_SAMPLE_PARAM_DATA %d %d\n", cmd_args[0], cmd_args[1]);
+			if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+				cmd_args[0] = SENSOR_COMMAND_LIGHT_GET_SAMPLE_PARAM_DATA;
+				err = alsps_factory.fops->do_vsen_commands(ID_LIGHT, cmd_args, ARRAY_SIZE(cmd_args));
+				if (err < 0) {
+					ALSPS_PR_ERR("ALSPS_IOCTL_GET_ALS_SAMPLE_PARAM_DATA fail!\n");
+					return -EINVAL;
+				}
+				copy_to_user(ptr, &cmd_args, sizeof(cmd_args));
+				ALSPS_PR_ERR("ALSPS_IOCTL_GET_ALS_SAMPLE_PARAM_DATA args:(%d ,%d, %d)\n", cmd_args[0], cmd_args[1], cmd_args[2]);
+			} else {
+				ALSPS_PR_ERR("ALSPS_IOCTL_GET_ALS_SAMPLE_PARAM_DATA NULL\n");
+				return -EINVAL;
+			}
+			return 0;
+
+		case ALSPS_IOCTL_GET_PS_OFFSET_VALUE:
+			if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+				cmd_args[0] = SENSOR_COMMAND_PROXIMITY_GET_CALIOFFSET;
+				err = alsps_factory.fops->do_vsen_commands(ID_PROXIMITY, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+				if (err < 0) {
+					ALSPS_PR_ERR("ALSPS_IOCTL_GET_PS_OFFSET_VALUE read data fail!\n");
+					return -EINVAL;
+				}
+				data = cmd_args[1];
+				ALSPS_PR_ERR("ALSPS_IOCTL_GET_PS_OFFSET_VALUE %d\n", data);
+				if (copy_to_user(ptr, &data, sizeof(data)))
+					return -EFAULT;
+			} else {
+				ALSPS_PR_ERR("ALSPS_IOCTL_GET_PS_OFFSET_VALUE NULL\n");
+				return -EINVAL;
+			}
+			return 0;
+
+		case ALSPS_IOCTL_NOTIFY_POWER_LEVEL:
+			if (copy_from_user(&cmd_args, ptr, sizeof(cmd_args)))
+				return -EFAULT;
+			ALSPS_PR_ERR("ALSPS_IOCTL_NOTIFY_POWER_LEVEL %d %d\n", cmd_args[0], cmd_args[1]);
+			if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+				cmd_args[0] = SENSOR_COMMAND_PROXIMITY_POWER_LEVEL;
+				err = alsps_factory.fops->do_vsen_commands(ID_PROXIMITY, cmd_args, ARRAY_SIZE(cmd_args));
+				if (err < 0) {
+					ALSPS_PR_ERR("SENSOR_COMMAND_PROXIMITY_POWER_LEVEL fail!\n");
+					return -EINVAL;
+				}
+				ALSPS_PR_ERR("SENSOR_COMMAND_PROXIMITY_POWER_LEVEL args:(%d ,%d)\n", cmd_args[0], cmd_args[1]);
+			} else {
+				ALSPS_PR_ERR("SENSOR_COMMAND_PROXIMITY_POWER_LEVEL NULL\n");
+				return -EINVAL;
+			}
+			return 0;
+
+		case ALSPS_IOCTL_GET_PS_RECALI_RESULT:
+			if (copy_from_user(&cmd_args, ptr, sizeof(cmd_args)))
+				return -EFAULT;
+			if (alsps_factory.fops != NULL && alsps_factory.fops->do_vsen_commands != NULL) {
+				cmd_args[0] = SENSOR_COMMAND_PROX_GET_RECALI_RESULT;
+				err = alsps_factory.fops->do_vsen_commands(ID_PROXIMITY, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+				if (err < 0) {
+					ALSPS_PR_ERR("ALSPS_IOCTL_GET_PS_RECALI_RESULT fail!\n");
+					return -EINVAL;
+				}
+				ALSPS_PR_ERR("ALSPS_IOCTL_GET_PS_RECALI_RESULT args:(%d ,%d, %d, %d)\n", cmd_args[0], cmd_args[1], cmd_args[2], cmd_args[3]);
+				if (copy_to_user(ptr, &cmd_args, sizeof(cmd_args)))
+					return -EFAULT;
+			} else {
+				ALSPS_PR_ERR("ALSPS_IOCTL_GET_PS_RECALI_RESULT NULL\n");
+				return -EINVAL;
+			}
+			return 0;
+
+	/* ADD by vsen team end */
 	default:
 		pr_err("unknown IOCTL: 0x%08x\n", cmd);
 		return -ENOIOCTLCMD;

@@ -110,6 +110,12 @@ static long mag_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 					"MSENSOR_IOCTL_SELF_TEST fail!\n");
 				return -EINVAL;
 			}
+			/* ADD by vsen team Begin */
+			pr_err("MSENSOR_IOCTL_SELF_TEST result %d\n", err);
+			sprintf(strbuf, "%d", err);
+			if (copy_to_user(ptr, strbuf, strlen(strbuf) + 1))
+				return -EFAULT;
+			/* ADD by vsen team End */
 		} else {
 			pr_err("MSENSOR_IOCTL_SELF_TEST NULL\n");
 			return -EINVAL;

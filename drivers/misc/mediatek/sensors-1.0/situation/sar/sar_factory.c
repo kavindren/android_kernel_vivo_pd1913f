@@ -39,9 +39,11 @@ static long sar_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 {
 	long err = 0;
 	void __user *ptr = (void __user *)arg;
-	int32_t data_buf[3] = {0};
-	struct SENSOR_DATA sensor_data = {0};
+	int data = 0;
 	uint32_t flag = 0;
+	int32_t data_buf[VSEN_COMMAND_ARGS_SIZE] = {0};
+	uint32_t cmd_args[VSEN_COMMAND_ARGS_SIZE] = {0};
+	pr_err("sar_factory_unlocked_ioctl cmd:%d\n", cmd);
 
 	if (_IOC_DIR(cmd) & _IOC_READ)
 		err = !access_ok(VERIFY_WRITE, (void __user *)arg,
@@ -58,6 +60,7 @@ static long sar_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 
 	switch (cmd) {
 	case SAR_IOCTL_INIT:
+		pr_err("SAR_IOCTL_INIT\n");
 		if (copy_from_user(&flag, ptr, sizeof(flag)))
 			return -EFAULT;
 		if (sar_factory.fops != NULL &&
@@ -76,61 +79,187 @@ static long sar_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 		}
 		return 0;
 	case SAR_IOCTL_READ_SENSORDATA:
+		pr_err("SAR_IOCTL_READ_SENSORDATA\n");
 		if (sar_factory.fops != NULL &&
-		    sar_factory.fops->get_data != NULL) {
-			err = sar_factory.fops->get_data(data_buf);
+			sar_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_SAR_GET_DIFF_OFFSET;
+			err = sar_factory.fops->do_vsen_commands(ID_SAR, cmd_args, ARRAY_SIZE(cmd_args));
 			if (err < 0) {
-				pr_err(
-					"SAR_IOCTL_READ_SENSORDATA read data fail!\n");
+				pr_err("SAR_IOCTL_READ_SENSORDATA fail!\n");
 				return -EINVAL;
 			}
-			pr_debug("SAR_IOCTL_READ_SENSORDATA: (%d, %d, %d)!\n",
-				data_buf[0], data_buf[1], data_buf[2]);
-			sensor_data.x = data_buf[0];
-			sensor_data.y = data_buf[1];
-			sensor_data.z = data_buf[2];
-			if (copy_to_user(ptr, &sensor_data,
-							sizeof(sensor_data)))
+			data_buf[0] = cmd_args[1];
+			data_buf[1] = cmd_args[2];
+			data_buf[2] = cmd_args[3];
+			data_buf[3] = cmd_args[4];
+			data_buf[4] = cmd_args[5];
+			data_buf[5] = cmd_args[6];
+			data_buf[6] = cmd_args[7];
+			data_buf[7] = cmd_args[8];
+			data_buf[8] = cmd_args[9];
+			pr_err("SAR_IOCTL_READ_SENSORDATA %d %d %d %d %d %d %d %d %d\n", cmd_args[1], cmd_args[2], cmd_args[3],
+				cmd_args[4], cmd_args[5], cmd_args[6], cmd_args[7], cmd_args[8], cmd_args[9]);
+			if (copy_to_user(ptr, &data_buf, sizeof(data_buf)))
 				return -EFAULT;
 		} else {
 			pr_err("SAR_IOCTL_READ_SENSORDATA NULL\n");
 			return -EINVAL;
 		}
 		return 0;
-	case SAR_IOCTL_ENABLE_CALI:
+
+	case SAR_IOCTL_ENABLE_CALI: /*compensation cali*/
+		pr_err("SAR_IOCTL_ENABLE_CALI\n");
 		if (sar_factory.fops != NULL &&
-		    sar_factory.fops->enable_calibration != NULL) {
-			err = sar_factory.fops->enable_calibration();
+			sar_factory.fops->do_vsen_commands != NULL) {
+			if (copy_from_user(&data, ptr, sizeof(data)))
+				return -EFAULT;
+			cmd_args[0] = SENSOR_COMMAND_SAR_ENABLE_CALI;
+			err = sar_factory.fops->do_vsen_commands(ID_SAR, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
 			if (err < 0) {
-				pr_err(
-					"SAR_IOCTL_ENABLE_CALI fail!\n");
+				pr_err("SENSOR_COMMAND_SAR_ENABLE_CALI fail!\n");
 				return -EINVAL;
 			}
+			data = cmd_args[1];
+			pr_err("SENSOR_COMMAND_SAR_ENABLE_CALI %d\n", data);
+			if (copy_to_user(ptr, &data, sizeof(data)))
+				return -EFAULT;
 		} else {
-			pr_err("SAR_IOCTL_ENABLE_CALI NULL\n");
+			pr_err("SENSOR_COMMAND_SAR_ENABLE_CALI NULL\n");
 			return -EINVAL;
 		}
 		return 0;
-	case SAR_IOCTL_GET_CALI:
+	case SAR_IOCTL_GET_CALI: /*get compensation cali result*/
+		pr_err("SAR_IOCTL_GET_CALI\n");
 		if (sar_factory.fops != NULL &&
-		    sar_factory.fops->get_cali != NULL) {
-			err = sar_factory.fops->get_cali(data_buf);
+			sar_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_SAR_GET_CALI;
+			err = sar_factory.fops->do_vsen_commands(ID_SAR, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
 			if (err < 0) {
-				pr_err("SAR_IOCTL_GET_CALI FAIL!\n");
+				pr_err("SENSOR_COMMAND_SAR_GET_CALI fail!\n");
 				return -EINVAL;
 			}
+			data = cmd_args[1];
+			pr_err("SENSOR_COMMAND_SAR_GET_CALI %d\n", data);
+			if (copy_to_user(ptr, &data, sizeof(data)))
+				return -EFAULT;
 		} else {
-			pr_err("SAR_IOCTL_GET_CALI NULL\n");
+			pr_err("SENSOR_COMMAND_SAR_GET_CALI NULL\n");
 			return -EINVAL;
 		}
-
-		pr_debug("SAR_IOCTL_GET_CALI: (%d, %d, %d)!\n",
-			data_buf[0], data_buf[1], data_buf[2]);
-		sensor_data.x = data_buf[0];
-		sensor_data.y = data_buf[1];
-		sensor_data.z = data_buf[2];
-		if (copy_to_user(ptr, &sensor_data, sizeof(sensor_data)))
+		return 0;
+	case SAR_IOCTL_READ_REG: /*read sar sensor registers*/
+		if (copy_from_user(&cmd_args, ptr, sizeof(cmd_args)))
 			return -EFAULT;
+		if (sar_factory.fops != NULL &&
+			sar_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_SAR_READ_REG;
+			err = sar_factory.fops->do_vsen_commands(ID_SAR, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("SENSOR_COMMAND_SAR_READ_REG fail!\n");
+				return -EINVAL;
+			}
+			pr_info("SAR_IOCTL_READ_REG result reg: 0x%x val: 0x%x\n", cmd_args[1], cmd_args[2]);
+			if (copy_to_user(ptr, &cmd_args, sizeof(cmd_args)))
+				return -EFAULT;
+		} else {
+			pr_err("SENSOR_COMMAND_SAR_READ_REG NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+	case SAR_IOCTL_WRITE_REG: /*read sar sensor registers*/
+		if (copy_from_user(&cmd_args, ptr, sizeof(cmd_args)))
+			return -EFAULT;
+		if (sar_factory.fops != NULL &&
+			sar_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_SAR_WRITE_REG;
+			err = sar_factory.fops->do_vsen_commands(ID_SAR, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("SENSOR_COMMAND_SAR_WRITE_REG fail!\n");
+				return -EINVAL;
+			}
+			pr_info("SAR_IOCTL_WRITE_REG result reg: 0x%x val: 0x%x\n", cmd_args[1], cmd_args[2]);
+			if (copy_to_user(ptr, &cmd_args, sizeof(cmd_args)))
+				return -EFAULT;
+		} else {
+			pr_err("SENSOR_COMMAND_SAR_WRITE_REG NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+	case SAR_IOCTL_GET_NEAR_FAR: /*read sar sensor registers*/
+		pr_err("SAR_IOCTL_GET_NEAR_FAR\n");
+		if (sar_factory.fops != NULL &&
+			sar_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_SAR_GET_NEAR_FAR;
+			err = sar_factory.fops->do_vsen_commands(ID_SAR, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("SENSOR_COMMAND_SAR_GET_NEAR_FAR fail!\n");
+				return -EINVAL;
+			}
+			data = cmd_args[1];
+			pr_err("SENSOR_COMMAND_SAR_GET_NEAR_FAR %d\n", data);
+			if (copy_to_user(ptr, &data, sizeof(data)))
+				return -EFAULT;
+		} else {
+			pr_err("SENSOR_COMMAND_SAR_GET_NEAR_FAR NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+	case SAR_IOCTL_FORCE_TO_NEAR: /*read sar sensor registers*/
+		if (copy_from_user(&cmd_args, ptr, sizeof(cmd_args)))
+			return -EFAULT;
+		pr_err("SAR_IOCTL_FORCE_TO_NEAR type:%d\n", cmd_args[1]);
+		if (sar_factory.fops != NULL &&
+			sar_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_SAR_FORCE_TO_NEAR;
+			err = sar_factory.fops->do_vsen_commands(ID_SAR, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("SENSOR_COMMAND_SAR_FORCE_TO_NEAR fail!\n");
+				return -EINVAL;
+			}
+			data = cmd_args[1];
+			pr_err("SENSOR_COMMAND_SAR_FORCE_TO_NEAR %d\n", data);
+			if (copy_to_user(ptr, &data, sizeof(data)))
+				return -EFAULT;
+		} else {
+			pr_err("SENSOR_COMMAND_SAR_FORCE_TO_NEAR NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+	case SAR_IOCTL_FORCE_TO_NOSAR:
+		pr_err("SAR_IOCTL_FORCE_TO_NOSAR\n");
+		if (sar_factory.fops != NULL &&
+			sar_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_SAR_FORCE_TO_NOSAR;
+			err = sar_factory.fops->do_vsen_commands(ID_SAR, cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_err("SAR_IOCTL_FORCE_TO_NOSAR fail!\n");
+				return -EINVAL;
+			}
+			data = cmd_args[1];
+			pr_err("SAR_IOCTL_FORCE_TO_NOSAR %d\n", data);
+		} else {
+			pr_err("SAR_IOCTL_FORCE_TO_NOSAR NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+
+	case SAR_IOCTL_SELF_TEST:
+		pr_err("SAR_IOCTL_SELF_TEST\n");
+		if (sar_factory.fops != NULL &&
+			sar_factory.fops->do_self_test != NULL) {
+			data = sar_factory.fops->do_self_test();
+			if (data < 0) {
+				pr_err(
+					"SAR_IOCTL_SELF_TEST FAIL!\n");
+				return -EINVAL;
+			}
+			pr_info("SAR_IOCTL_SELF_TEST result %d\n", data);
+			if (copy_to_user(ptr, &data, sizeof(data)))
+				return -EFAULT;
+		} else {
+			pr_err("SAR_IOCTL_SELF_TEST NULL\n");
+			return -EINVAL;
+		}
 		return 0;
 	default:
 		pr_err("unknown IOCTL: 0x%08x\n", cmd);

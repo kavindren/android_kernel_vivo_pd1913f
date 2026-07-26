@@ -82,8 +82,24 @@
 #define SENSOR_TYPE_RGBW                               70
 #define SENSOR_TYPE_GYRO_TEMPERATURE                   71
 #define SENSOR_TYPE_SAR                                72
+#define SENSOR_TYPE_SAR_SECONDARY                      73
+
+#define SENSOR_TYPE_WINDOW_ORIENTATION              81
+#define SENSOR_TYPE_ANGLE_JUDGE                     87
+#define SENSOR_TYPE_AMD                             88
+#define SENSOR_TYPE_RAISEUP_DETECT                  89
+#define SENSOR_TYPE_PUTDOWN_DETECT                  90
+#define SENSOR_TYPE_ANGLE_DIRECTION                 91
+#define SENSOR_TYPE_DROPDOWN_DETECT                 92
+#define SENSOR_TYPE_AMBIENT_LIGHT_SCENE             93
+#define SENSOR_TYPE_VIVOMOTION_DETECT               94
+#define SENSOR_TYPE_PROXIMITY_UNDERDISPLAY          95
+#define SENSOR_TYPE_SMARTPROX                       96
+#define SENSOR_TYPE_DROP_DEPTH                      97
+
+
 /* end sensor type */
-#define SENSOR_TYPE_MAX_NUM                            SENSOR_TYPE_SAR
+#define SENSOR_TYPE_MAX_NUM                            SENSOR_TYPE_DROP_DEPTH
 #define SENSOR_TYPE_MAX_NUM_PLUS_ONE                   (SENSOR_TYPE_MAX_NUM + 1)
 
 /*---------------------------------------------------------------------------*/
@@ -130,6 +146,13 @@
 #define ID_HEART_BEAT           (ID_BASE + SENSOR_TYPE_HEART_BEAT - 1)
 #define ID_DYNAMIC_SENSOR_META  (ID_BASE + SENSOR_TYPE_DYNAMIC_SENSOR_META - 1)
 #define ID_ADDITIONAL_INFO      (ID_BASE + SENSOR_TYPE_ADDITIONAL_INFO - 1)
+#define ID_WINDOW_ORIENTATION           (ID_BASE + SENSOR_TYPE_WINDOW_ORIENTATION - 1)
+#define ID_ANGLE_JUDGE                  (ID_BASE + SENSOR_TYPE_ANGLE_JUDGE - 1)
+#define ID_AMD                          (ID_BASE + SENSOR_TYPE_AMD - 1)
+#define ID_RAISEUP_DETECT               (ID_BASE + SENSOR_TYPE_RAISEUP_DETECT - 1)
+#define ID_PUTDOWN_DETECT               (ID_BASE + SENSOR_TYPE_PUTDOWN_DETECT - 1)
+#define ID_ANGLE_DIRECTION              (ID_BASE + SENSOR_TYPE_ANGLE_DIRECTION - 1)
+#define ID_DROPDOWN_DETECT              (ID_BASE + SENSOR_TYPE_DROPDOWN_DETECT - 1)
 #define ID_LOW_LATENCY_OFFBODY_DETECT   \
 		(ID_BASE + SENSOR_TYPE_LOW_LATENCY_OFFBODY_DETECT - 1)
 #define ID_ACCELEROMETER_UNCALIBRATED   \
@@ -155,8 +178,16 @@
 #define ID_RGBW                 (ID_BASE + SENSOR_TYPE_RGBW - 1)
 #define ID_GYRO_TEMPERATURE     (ID_BASE + SENSOR_TYPE_GYRO_TEMPERATURE - 1)
 #define ID_SAR                  (ID_BASE + SENSOR_TYPE_SAR - 1)
+#define ID_SAR_SECONDARY        (ID_BASE + SENSOR_TYPE_SAR_SECONDARY - 1)
+#define ID_AMBIENT_LIGHT_SCENE  (ID_BASE + SENSOR_TYPE_AMBIENT_LIGHT_SCENE - 1)
+#define ID_VIVOMOTION_DETECT    (ID_BASE + SENSOR_TYPE_VIVOMOTION_DETECT - 1)
+#define ID_PROXIMITY_UNDERDISPLAY  (ID_BASE + SENSOR_TYPE_PROXIMITY_UNDERDISPLAY - 1)
+#define ID_SMARTPROX_DETECT     (ID_BASE + SENSOR_TYPE_SMARTPROX - 1)
+#define ID_DROPDEPTH_DETECT  (ID_BASE + SENSOR_TYPE_DROP_DEPTH - 1)
+
+
 /* end sensor ID */
-#define ID_SENSOR_MAX_HANDLE    (ID_SAR)
+#define ID_SENSOR_MAX_HANDLE    (ID_DROPDEPTH_DETECT)
 #define ID_SENSOR_MAX_HANDLE_PLUS_ONE    (ID_SENSOR_MAX_HANDLE + 1)
 
 #if (ID_SENSOR_MAX_HANDLE_PLUS_ONE != SENSOR_TYPE_MAX_NUM)

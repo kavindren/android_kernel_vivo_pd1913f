@@ -81,6 +81,26 @@ int sensor_input_event(unsigned char handle, const struct sensor_event *event)
 	return 0;
 }
 
+void clean_acc_buf(void)
+{
+	struct sensor_event_client *client = &event_obj->client[ID_ACCELEROMETER];
+	pr_err_ratelimited("clean_acc_buf\n");
+	spin_lock(&client->buffer_lock);
+	client->head = client->tail = 0;
+	client->buffull = false;
+	spin_unlock(&client->buffer_lock);
+}
+
+void clean_mag_buf(void)
+{
+	struct sensor_event_client *client = &event_obj->client[ID_MAGNETIC];
+	pr_err_ratelimited("clean_mag_buf\n");
+	spin_lock(&client->buffer_lock);
+	client->head = client->tail = 0;
+	client->buffull = false;
+	spin_unlock(&client->buffer_lock);
+}
+
 static int sensor_event_fetch_next(struct sensor_event_client *client,
 				   struct sensor_event *event)
 {

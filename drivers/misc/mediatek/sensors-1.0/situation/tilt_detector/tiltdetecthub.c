@@ -134,5 +134,5 @@ static void __exit tiltdetecthub_exit(void)
 module_init(tiltdetecthub_init);
 module_exit(tiltdetecthub_exit);
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("GLANCE_GESTURE_HUB driver");
+MODULE_DESCRIPTION("Tilt Detect driver");
 MODULE_AUTHOR("hongxu.zhao@mediatek.com");

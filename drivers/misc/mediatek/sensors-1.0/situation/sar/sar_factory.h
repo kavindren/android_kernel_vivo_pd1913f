@@ -27,6 +27,7 @@
 #include <linux/types.h>
 #include <linux/uaccess.h>
 #include <linux/workqueue.h>
+#include <linux/vsen_common.h>
 
 #include <hwmsen_helper.h>
 #include <hwmsensor.h>
@@ -39,6 +40,8 @@ struct sar_factory_fops {
 	int (*get_data)(int32_t sensor_data[3]);
 	int (*enable_calibration)(void);
 	int (*get_cali)(int32_t data[3]);
+	int (*do_vsen_commands)(uint8_t sensorType, int32_t *args, int args_len);
+	int (*do_self_test)(void);
 };
 
 struct sar_factory_public {

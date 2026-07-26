@@ -1,4 +1,4 @@
-/* stationary gesture sensor driver
+/* motion detect sensor driver
  *
  * Copyright (C) 2016 MediaTek Inc.
  *
@@ -146,5 +146,5 @@ static void __exit motion_detect_exit(void)
 module_init(motion_detect_init);
 module_exit(motion_detect_exit);
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("Stationary Gesture driver");
+MODULE_DESCRIPTION("Motion Detect driver");
 MODULE_AUTHOR("qiangming.xia@mediatek.com");

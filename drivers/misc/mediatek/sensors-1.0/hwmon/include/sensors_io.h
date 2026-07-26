@@ -86,6 +86,8 @@ struct compat_biometric_threshold {
 #define GSENSOR_IOCTL_CLR_CALI _IO(GSENSOR, 0x08)
 #define GSENSOR_IOCTL_ENABLE_CALI _IO(GSENSOR, 0x09)
 #define GSENSOR_IOCTL_SELF_TEST _IO(GSENSOR, 0x0A)
+#define GSENSOR_IOCTL_CLR_INT _IOW(GSENSOR, 0xa0, int)
+#define GSENSOR_IOCTL_READ_INT _IOW(GSENSOR, 0xb0, int)
 
 #ifdef CONFIG_COMPAT
 #define COMPAT_GSENSOR_IOCTL_INIT _IO(GSENSOR, 0x01)
@@ -138,6 +140,40 @@ struct compat_biometric_threshold {
 #define ALSPS_IOCTL_ALS_GET_CALI _IOW(ALSPS, 0x19, int)
 #define ALSPS_ALS_SET_CALI _IOW(ALSPS, 0x20, int)
 
+/*-------------------vsen team add-----------------------------------*/
+#define ALSPS_SET_PS_PARA_INDEX _IOW(ALSPS, 0x40, int)
+#define ALSPS_IOCTL_CHECK_PS_INT _IOW(ALSPS, 0x41, int)
+#define ALSPS_IOCTL_READ_PS_INT _IOR(ALSPS, 0x42, int)
+#define ALSPS_IOCTL_GET_PS_DATA_RANGE _IOR(ALSPS, 0x43, int)
+#define ALSPS_IOCTL_GET_PS_STATUS _IOR(ALSPS, 0x44, int)
+#define ALSPS_IOCTL_GET_PS_REG_DATA _IOR(ALSPS, 0x45, int)
+#define ALSPS_IOCTL_SET_PS_REG_DATA _IOW(ALSPS, 0x46, int)
+#define ALSPS_IOCTL_SET_PS_ENG_CALI_DATA _IOW(ALSPS, 0x47, int)
+#define ALSPS_IOCTL_NOTIFY_PS_THRES_LEVEL _IOR(ALSPS, 0x48, int)
+#define ALSPS_IOCTL_BOOST_ALS_REPORT _IOR(ALSPS, 0x49, int)
+#define ALSPS_IOCTL_GET_PS_PARA_INDEX _IOR(ALSPS, 0x50, int)
+#define ALSPS_IOCTL_GET_ALS_PARA_INDEX _IOR(ALSPS, 0x51, int)
+#define ALSPS_IOCTL_SET_PS_CHIP_RESET _IOR(ALSPS, 0x52, int)
+#define ALSPS_IOCTL_SET_PS_PRE_CALIBRATION _IOW(ALSPS, 0x52, int)
+#define ALSPS_IOCTL_GET_PS_PRE_CALIBRATION _IOR(ALSPS, 0x53, int)
+#define ALSPS_IOCTL_SET_PS_CALI_OFFSET_DATA _IOW(ALSPS, 0x54, int)
+#define ALSPS_IOCTL_GET_ALS_CHANNEL_DATA _IOR(ALSPS, 0x55, int)
+#define ALSPS_IOCTL_SET_PS_PRE_CALI	 _IOR(ALSPS, 0x56, int)
+#define ALSPS_IOCTL_GET_ALS_REG_DATA _IOR(ALSPS, 0x57, int)
+#define ALSPS_IOCTL_SET_ALS_REG_DATA _IOW(ALSPS, 0x58, int)
+#define ALSPS_IOCTL_SET_PS_DEFAULT_CHNANEL _IOW(ALSPS, 0x59, int)
+#define ALSPS_IOCTL_DISABLE_ALS_PS _IOW(ALSPS, 0x5A, int)
+#define ALSPS_IOCTL_SET_NOTIFY_BRIGHTNESS _IOW(ALSPS, 0x5B, int)
+#define ALSPS_IOCTL_SET_ENG_MODE _IOW(ALSPS, 0x5C, int)
+#define ALSPS_IOCTL_NOTIFY_PS_TEMP_CALI         _IOW(ALSPS, 0x5D, int)
+#define ALSPS_IOCTL_NOTIFY_PS_BROKEN _IOW(ALSPS, 0x5E, int)
+#define ALSPS_IOCTL_SET_ALS_SAMPLE_PARAM_MODE       _IOW(ALSPS, 0x5F, int)
+#define ALSPS_IOCTL_GET_ALS_SAMPLE_PARAM_DATA       _IOW(ALSPS, 0x60, int)
+#define ALSPS_IOCTL_GET_PS_OFFSET_VALUE             _IOW(ALSPS, 0x61, int)
+#define ALSPS_IOCTL_NOTIFY_POWER_LEVEL              _IOW(ALSPS, 0x62, int)
+#define ALSPS_IOCTL_GET_PS_RECALI_RESULT            _IOW(ALSPS, 0x63, int)
+/*-------------------vsen team add-----------------------------------*/
+
 #ifdef CONFIG_COMPAT
 #define COMPAT_ALSPS_SET_PS_MODE _IOW(ALSPS, 0x01, compat_int_t)
 #define COMPAT_ALSPS_GET_PS_RAW_DATA _IOR(ALSPS, 0x04, compat_int_t)
@@ -172,6 +208,10 @@ struct compat_biometric_threshold {
 #define GYROSCOPE_IOCTL_READ_SENSORDATA_RAW _IOR(GYROSCOPE, 0x07, int)
 #define GYROSCOPE_IOCTL_ENABLE_CALI _IO(GYROSCOPE, 0x0A)
 #define GYROSCOPE_IOCTL_SELF_TEST _IO(GYROSCOPE, 0x0B)
+#define GYROSCOPE_IOCTL_CLR_INT   _IOW(GSENSOR, 0x0C, int)
+#define GYROSCOPE_IOCTL_READ_INT  _IOW(GSENSOR, 0x0D, int)
+
+
 #ifdef CONFIG_COMPAT
 #define COMPAT_GYROSCOPE_IOCTL_INIT _IO(GYROSCOPE, 0x01)
 #define COMPAT_GYROSCOPE_IOCTL_SMT_DATA _IOR(GYROSCOPE, 0x02, compat_int_t)
@@ -229,15 +269,44 @@ struct compat_biometric_threshold {
 #endif
 
 #define SAR 0x91
-#define SAR_IOCTL_INIT _IOW(SAR, 0x01, int)
-#define SAR_IOCTL_READ_SENSORDATA _IOR(SAR, 0x02, struct SENSOR_DATA)
-#define SAR_IOCTL_GET_CALI  _IOR(SAR, 0x03, struct SENSOR_DATA)
-#define SAR_IOCTL_ENABLE_CALI _IO(SAR, 0x04)
+#define SAR_IOCTL_INIT                         _IOW(SAR, 0x01, int)
+#define SAR_IOCTL_READ_SENSORDATA              _IOR(SAR, 0x02, int)
+#define SAR_IOCTL_GET_CALI                     _IOR(SAR, 0x03, int)
+#define SAR_IOCTL_ENABLE_CALI                   _IO(SAR, 0x04)
+#define SAR_IOCTL_READ_REG                     _IOR(SAR, 0x05, int)
+#define SAR_IOCTL_WRITE_REG                    _IOW(SAR, 0x06, int)
+#define SAR_IOCTL_SELF_TEST                     _IO(SAR, 0x07)
+#define SAR_IOCTL_GET_NEAR_FAR                 _IOR(SAR, 0x08, int)
+#define SAR_IOCTL_FORCE_TO_NEAR                _IOW(SAR, 0x09, int)
+#define SAR_IOCTL_FORCE_TO_NOSAR               _IOW(SAR, 0x0A, int)
+
 #ifdef CONFIG_COMPAT
 #define COMPAT_SAR_IOCTL_INIT _IOW(SAR, 0x01, compat_int_t)
 #define COMPAT_SAR_IOCTL_READ_SENSORDATA _IOR(SAR, 0x02, struct SENSOR_DATA)
 #define COMPAT_SAR_IOCTL_GET_CALI _IOR(SAR, 0x03, struct SENSOR_DATA)
 #define COMPAT_SAR_IOCTL_ENABLE_CALI _IO(SAR, 0x04)
 #endif
+
+#define SAR_B 0x92
+#define SAR_B_IOCTL_INIT                         _IOW(SAR_B, 0x01, int)
+#define SAR_B_IOCTL_READ_SENSORDATA              _IOR(SAR_B, 0x02, int)
+#define SAR_B_IOCTL_GET_CALI                     _IOR(SAR_B, 0x03, int)
+#define SAR_B_IOCTL_ENABLE_CALI                   _IO(SAR_B, 0x04)
+#define SAR_B_IOCTL_READ_REG                     _IOR(SAR_B, 0x05, int)
+#define SAR_B_IOCTL_WRITE_REG                    _IOW(SAR_B, 0x06, int)
+#define SAR_B_IOCTL_SELF_TEST                     _IO(SAR_B, 0x07)
+#define SAR_B_IOCTL_GET_NEAR_FAR                 _IOR(SAR_B, 0x08, int)
+#define SAR_B_IOCTL_FORCE_TO_NEAR                _IOW(SAR_B, 0x09, int)
+#define SAR_B_IOCTL_FORCE_TO_NOSAR               _IOW(SAR_B, 0x0A, int)
+#ifdef CONFIG_COMPAT
+#define COMPAT_SAR_B_IOCTL_INIT _IOW(SAR_B, 0x01, compat_int_t)
+#define COMPAT_SAR_B_IOCTL_READ_SENSORDATA _IOR(SAR_B, 0x02, struct SENSOR_DATA)
+#define COMPAT_SAR_B_IOCTL_GET_CALI _IOR(SAR_B, 0x03, struct SENSOR_DATA)
+#define COMPAT_SAR_B_IOCTL_ENABLE_CALI _IO(SAR_B, 0x04)
+#endif
+
+
+
+
 
 #endif

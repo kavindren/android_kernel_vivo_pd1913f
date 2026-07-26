@@ -41,7 +41,8 @@ static long acc_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 	uint32_t flag = 0;
 	char strbuf[64];
 	int32_t data_buf[3] = {0};
-	struct SENSOR_DATA sensor_data = {0};
+	int data = 0;
+	uint32_t cmd_args[VSEN_COMMAND_ARGS_SIZE] = {0, 0};
 
 	if (_IOC_DIR(cmd) & _IOC_READ)
 		err = !access_ok(VERIFY_WRITE, (void __user *)arg,
@@ -62,13 +63,13 @@ static long acc_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 			return -EFAULT;
 		if (accel_factory.fops != NULL &&
 		    accel_factory.fops->enable_sensor != NULL) {
-			err = accel_factory.fops->enable_sensor(flag, 5);
+			err = accel_factory.fops->enable_sensor(flag, 20);
 			if (err < 0) {
 				pr_err("GSENSOR_IOCTL_INIT fail!\n");
 				return -EINVAL;
 			}
 			pr_debug("GSENSOR_IOCTL_INIT, enable: %d, s_p:%dms\n",
-				flag, 5);
+				flag, 20);
 		} else {
 			pr_debug("GSENSOR_IOCTL_INIT NULL\n");
 			return -EINVAL;
@@ -87,8 +88,7 @@ static long acc_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 			}
 			sprintf(strbuf, "%x %x %x", data_buf[0], data_buf[1],
 				data_buf[2]);
-			pr_debug("GSENSOR_READ_SENSORDATA read strbuf : (%s)!\n",
-				strbuf);
+			pr_debug("GSENSOR_READ_SENSORDATA %d %d %d!\n", data_buf[0], data_buf[1], data_buf[2]);
 			if (copy_to_user(ptr, strbuf, strlen(strbuf) + 1))
 				return -EFAULT;
 		} else {
@@ -107,8 +107,7 @@ static long acc_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 			}
 			sprintf(strbuf, "%x %x %x", data_buf[0], data_buf[1],
 				data_buf[2]);
-			pr_debug("GSENSOR_SENSORDATA_RAW read strbuf : (%s)!\n",
-				strbuf);
+			pr_debug("GSENSOR_SENSORDATA_RAW %d %d %d!\n", data_buf[0], data_buf[1], data_buf[2]);
 			if (copy_to_user(ptr, strbuf, strlen(strbuf) + 1))
 				return -EFAULT;
 		} else {
@@ -117,25 +116,23 @@ static long acc_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 		}
 		return 0;
 	case GSENSOR_IOCTL_SET_CALI:
-		if (copy_from_user(&sensor_data, ptr, sizeof(sensor_data)))
+		if (copy_from_user(&cmd_args, ptr, sizeof(cmd_args)))
 			return -EFAULT;
-		data_buf[0] = sensor_data.x;
-		data_buf[1] = sensor_data.y;
-		data_buf[2] = sensor_data.z;
-		pr_debug("GSENSOR_IOCTL_SET_CALI: (%d, %d, %d)!\n", data_buf[0],
-			data_buf[1], data_buf[2]);
-		if (accel_factory.fops != NULL &&
-		    accel_factory.fops->set_cali != NULL) {
-			err = accel_factory.fops->set_cali(data_buf);
+
+		if (accel_factory.fops != NULL && accel_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_ACCEL_SET_ENG_CALI_DATA;
+			err = accel_factory.fops->do_vsen_commands(ID_ACCELEROMETER, cmd_args, ARRAY_SIZE(cmd_args));
 			if (err < 0) {
-				pr_err("GSENSOR_IOCTL_SET_CALI FAIL!\n");
+				pr_debug("SENSOR_COMMAND_ACCEL_SET_ENG_CALI_DATA fail!\n");
 				return -EINVAL;
 			}
+			pr_debug("GSENSOR_IOCTL_SET_CALI %d %d %d\n", cmd_args[1], cmd_args[2], cmd_args[3]);
 		} else {
 			pr_debug("GSENSOR_IOCTL_SET_CALI NULL\n");
 			return -EINVAL;
 		}
 		return 0;
+#if 0
 	case GSENSOR_IOCTL_CLR_CALI:
 		if (accel_factory.fops != NULL &&
 		    accel_factory.fops->clear_cali != NULL) {
@@ -182,19 +179,79 @@ static long acc_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 			return -EINVAL;
 		}
 		return 0;
+#endif
 	case GSENSOR_IOCTL_SELF_TEST:
-		if (accel_factory.fops != NULL &&
-		    accel_factory.fops->do_self_test != NULL) {
+		if (accel_factory.fops != NULL && accel_factory.fops->enable_sensor != NULL) {
+			err = accel_factory.fops->enable_sensor(1, 5);
+			if (err < 0) {
+				pr_err("GSENSOR_IOCTL_SELF_TEST enable_sensor fail!\n");
+				return -EINVAL;
+			}
+			pr_debug("GSENSOR_IOCTL_SELF_TEST, enable: 1, sample_period:%dms\n", 100);
+		}
+		if (accel_factory.fops != NULL && accel_factory.fops->do_self_test != NULL) {
 			err = accel_factory.fops->do_self_test();
 			if (err < 0) {
 				pr_err("GSENSOR_IOCTL_SELF_TEST FAIL!\n");
 				return -EINVAL;
 			}
+
+			pr_info("GSENSOR_IOCTL_SELF_TEST result %d\n", err);
+			sprintf(strbuf, "%d", err);
+			if (copy_to_user(ptr, strbuf, strlen(strbuf) + 1))
+				return -EFAULT;
 		} else {
-			pr_err("GSENSOR_IOCTL_SELF_TEST NULL\n");
+			pr_err("GSENSOR_IOCTL_SELF_TEST accel_factory.fops is NULL\n");
+			return -EINVAL;
+		}
+		if (accel_factory.fops != NULL && accel_factory.fops->enable_sensor != NULL) {
+			err = accel_factory.fops->enable_sensor(0, 5);
+			if (err < 0) {
+				pr_err("GSENSOR_IOCTL_SELF_TEST fail!\n");
+				return -EINVAL;
+			}
+			pr_debug("GSENSOR_IOCTL_SELF_TEST, enable: 0, sample_period:%dms\n", 100);
+		}
+		return 0;
+	/* add by vsen team : em_acc_traffic_test begin */
+	case GSENSOR_IOCTL_CLR_INT:
+		if (accel_factory.fops != NULL && accel_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_ACCEL_CLR_INT;
+			err = accel_factory.fops->do_vsen_commands(ID_ACCELEROMETER,
+					cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_debug("GSENSOR_IOCTL_CLR_INT read data fail!\n");
+				return -EINVAL;
+			}
+			data = cmd_args[1];
+			if (copy_to_user(ptr, &data, sizeof(data)))
+				return -EFAULT;
+		} else {
+			pr_debug("GSENSOR_IOCTL_CLR_INT NULL\n");
 			return -EINVAL;
 		}
 		return 0;
+
+	case GSENSOR_IOCTL_READ_INT:
+		if (accel_factory.fops != NULL && accel_factory.fops->do_vsen_commands != NULL) {
+			cmd_args[0] = SENSOR_COMMAND_ACCEL_READ_INT;
+			err = accel_factory.fops->do_vsen_commands(ID_ACCELEROMETER,
+					cmd_args, sizeof(cmd_args)/sizeof(cmd_args[0]));
+			if (err < 0) {
+				pr_debug("GSENSOR_IOCTL_READ_INT read data fail!\n");
+				return -EINVAL;
+			}
+			data = cmd_args[1];
+			pr_debug("GSENSOR_IOCTL_READ_INT %d\n", data);
+			if (copy_to_user(ptr, &data, sizeof(data)))
+				return -EFAULT;
+		} else {
+			pr_debug("GSENSOR_IOCTL_READ_INT NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+	/* add by vsen team : em_acc_traffic_test end */
+
 	default:
 		pr_err("unknown IOCTL: 0x%08x\n", cmd);
 		return -ENOIOCTLCMD;

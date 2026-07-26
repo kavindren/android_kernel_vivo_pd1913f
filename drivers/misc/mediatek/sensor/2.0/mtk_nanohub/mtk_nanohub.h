@@ -15,7 +15,7 @@
 #define SCP_SENSOR_HUB_H
 
 #include <linux/ioctl.h>
-#include "../core/vsen_sensorhub.h"
+#include "../core/vivo_sensorhub.h"
 
 #define EVT_NO_SENSOR_CONFIG_EVENT 0x00000300
 #define SENSOR_RATE_ONCHANGE       0xFFFFFF01UL
@@ -207,14 +207,6 @@ struct sar_event_t {
 	uint32_t status;
 };
 
-typedef struct {
-    int32_t value[6]; //lux r/g/b/c/w
-    int16_t angle_x;
-    int16_t angle_y;
-    int16_t angle_z;
-    int8_t id;
-    int8_t motion;
-} als_event_t;
 enum activity_type_t {
 	STILL,
 	STANDING,
@@ -272,7 +264,6 @@ struct data_unit_t {
 		struct geofence_event_t geofence_data_t;
 		struct sar_event_t sar_event;
 		int32_t data[8];
-		als_event_t als;
 	};
 } __packed;
 
@@ -361,8 +352,6 @@ struct SCP_SENSOR_HUB_SET_CONFIG_REQ {
 	/* struct sensorFIFO   *bufferBase; */
 	uint32_t bufferBase;/* use int to store buffer DRAM base LSB 32 bits */
 	uint32_t bufferSize;
-	uint8_t mon, day, hour, min, sec;
-	int msec;
 	uint64_t ap_timestamp;
 	uint64_t arch_counter;
 	/* uint32_t    reserved[8]; */
@@ -385,6 +374,7 @@ enum CUST_ACTION {
 	CUST_ACTION_SET_FACTORY,
 	CUST_ACTION_GET_SENSOR_INFO,
 };
+
 
 struct SCP_SENSOR_HUB_CUST {
 	enum CUST_ACTION action;
@@ -543,7 +533,7 @@ union SCP_SENSOR_HUB_DATA {
 	struct SCP_SENSOR_HUB_SET_CUST_REQ set_cust_req;
 	struct SCP_SENSOR_HUB_SET_CUST_RSP set_cust_rsp;
 	struct SCP_SENSOR_HUB_NOTIFY_RSP notify_rsp;
-	struct SCP_SENSOR_HUB_VSEN_CMD_REQ vivo_cmd_req;
-	struct SCP_SENSOR_HUB_VSEN_CMD_REQ vivo_cmd_rsp;
+	struct SCP_SENSOR_HUB_VIVO_CMD_REQ vivo_cmd_req;
+	struct SCP_SENSOR_HUB_VIVO_CMD_RSP vivo_cmd_rsp;
 };
 #endif

@@ -21,8 +21,22 @@
 #include "SCP_power_monitor.h"
 #include <linux/pm_wakeup.h>
 
+/*add by vsen team begin*/
+#include <linux/vsen_common.h>
+#ifdef CONFIG_ALSPS_HUB_OF
+#include <linux/gpio.h>
+#include <linux/of_platform.h>
+#include <linux/of_gpio.h>
+#endif
+/*add by vsen team end*/
 
 #define ALSPSHUB_DEV_NAME     "alsps_hub_pl"
+#define APS_TAG                  "[ALS/PS] "
+#define APS_FUN(f)               pr_debug(APS_TAG"%s\n", __func__)
+#define APS_PR_ERR(fmt, args...)    pr_err(APS_TAG"%s %d : "fmt, __func__, __LINE__, ##args)
+#define APS_LOG(fmt, args...)    pr_debug(APS_TAG fmt, ##args)
+#define APS_DBG(fmt, args...)    pr_debug(APS_TAG fmt, ##args)
+
 
 struct alspshub_ipi_data {
 	struct work_struct init_done_work;
@@ -62,8 +76,18 @@ static struct alsps_init_info alspshub_init_info = {
 
 };
 
+#if defined CONFIG_VSEN_SCP_RESET_ENABLE
+static int32_t ps_cali_data = -1;
+static int32_t ps_channel = -1;
+static int32_t ps_hardware_broken = -1;
+#endif
+
 static DEFINE_MUTEX(alspshub_mutex);
 static DEFINE_SPINLOCK(calibration_lock);
+
+/*add by vivo sensor team for als_glass_param */
+extern unsigned int mdss_report_lcm_id(void);
+
 
 enum {
 	CMC_BIT_ALS = 1,
@@ -285,6 +309,8 @@ static void alspshub_init_done_work(struct work_struct *work)
 {
 	struct alspshub_ipi_data *obj = obj_ipi_data;
 	int err = 0;
+	unsigned int lcm_soft_id = 0;
+	uint32_t cmd_args[VSEN_COMMAND_ARGS_SIZE] = {0};
 #ifndef MTK_OLD_FACTORY_CALIBRATION
 	int32_t cfg_data[2] = {0};
 #endif
@@ -319,6 +345,38 @@ static void alspshub_init_done_work(struct work_struct *work)
 	if (err < 0)
 		pr_err("sensor_cfg_to_hub als fail\n");
 #endif
+	/*set sreen id for als glass parameter begin*/
+	lcm_soft_id = mdss_report_lcm_id();
+	cmd_args[0] = SENSOR_COMMAND_LIGHT_SET_LCM_ID;
+	cmd_args[1] = lcm_soft_id;
+	err = sensor_set_vsen_cmd_to_hub(ID_LIGHT, cmd_args, ARRAY_SIZE(cmd_args));
+	pr_err("scp_reset,set lcm_soft_id:%d\n", lcm_soft_id);
+	if (err < 0)
+		pr_err("scp reset, SENSOR_COMMAND_LIGHT_SET_LCM_ID fail!\n");
+	/*set sreen id for als glass parameter end*/
+
+/* ADD by vsen team start */
+#if defined CONFIG_VSEN_SCP_RESET_ENABLE
+	if (ps_cali_data != -1) {
+		cmd_args[0] = SENSOR_COMMAND_PROX_SET_ENG_CALI_DATA;
+		cmd_args[1] = ps_cali_data;
+		err = sensor_set_vsen_cmd_to_hub(ID_PROXIMITY, cmd_args, ARRAY_SIZE(cmd_args));
+		pr_err("scp_reset,set ps_cali:%d\n", ps_cali_data);
+		if (err < 0)
+			pr_err("scp reset, SENSOR_COMMAND_PROX_SET_ENG_CALI_DATA fail!\n");
+	}
+
+	if (ps_channel != -1) {
+		cmd_args[0] = SENSOR_COMMAND_PROX_SET_CALI_OFFSET_DATA;
+		cmd_args[1] = ps_channel;
+		err = sensor_set_vsen_cmd_to_hub(ID_PROXIMITY, cmd_args, ARRAY_SIZE(cmd_args));
+		pr_err("scp_reset,set ps_channel:%d\n", ps_channel);
+		if (err < 0)
+			pr_err("scp reset, SENSOR_COMMAND_PROX_SET_CALI_OFFSET_DATA fail!\n");
+	}
+#endif
+/* ADD by vsen end */
+
 }
 static int ps_recv_data(struct data_unit_t *event, void *reserved)
 {
@@ -357,9 +415,17 @@ static int als_recv_data(struct data_unit_t *event, void *reserved)
 		err = als_flush_report();
 	else if ((event->flush_action == DATA_ACTION) &&
 			READ_ONCE(obj->als_android_enable) == true)
-		err = als_data_report_t(event->light,
+			/* Modify by vsen team Begin */
+#ifdef CONFIG_ALS_DATA_REPORT_EXTENSION
+			err = als_extension_data_report_t(event->als,
 				SENSOR_STATUS_ACCURACY_MEDIUM,
 				(int64_t)event->time_stamp);
+#else
+			err = als_data_report_t(event->light,
+					SENSOR_STATUS_ACCURACY_MEDIUM,
+					(int64_t)event->time_stamp);
+#endif
+			/* Modify by vsen team End */
 	else if (event->flush_action == CALI_ACTION) {
 		spin_lock(&calibration_lock);
 		atomic_set(&obj->als_cali, event->data[0]);
@@ -391,6 +457,13 @@ static int alshub_factory_enable_sensor(bool enable_disable,
 		WRITE_ONCE(obj->als_factory_enable, true);
 	else
 		WRITE_ONCE(obj->als_factory_enable, false);
+
+	/* Add by vsen team: Android framework enable als, keep current state begin */
+	if (READ_ONCE(obj->als_android_enable) == true) {
+		pr_info("alshub factory_enable do nothing when android enable als\n");
+		return 0;
+	}
+	/* Add by vsen team: Android framework enable als, keep current state end */
 
 	if (enable_disable == true) {
 		err = sensor_set_delay_to_hub(ID_LIGHT, sample_periods_ms);
@@ -465,6 +538,13 @@ static int pshub_factory_enable_sensor(bool enable_disable,
 	int err = 0;
 	struct alspshub_ipi_data *obj = obj_ipi_data;
 
+	/* Add by vsen team: Android framework enable ps, keep current state begin */
+	if (READ_ONCE(obj->ps_android_enable) == true) {
+		pr_info("pshub factory_enable do nothing when android enable ps\n");
+		return 0;
+	}
+	/* Add by vsen team: Android framework enable ps, keep current state end */
+
 	if (enable_disable == true) {
 		err = sensor_set_delay_to_hub(ID_PROXIMITY, sample_periods_ms);
 		if (err) {
@@ -502,7 +582,10 @@ static int pshub_factory_get_raw_data(int32_t *data)
 	err = sensor_get_data_from_hub(ID_PROXIMITY, &data_t);
 	if (err < 0)
 		return -1;
-	*data = data_t.proximity_t.steps;
+	*data = data_t.data[0];
+	*(data + 1) = data_t.data[1];
+	*(data + 2) = data_t.data[2];
+
 	return 0;
 }
 static int pshub_factory_enable_calibration(void)
@@ -592,6 +675,43 @@ static int pshub_factory_get_threshold(int32_t threshold[2])
 	return 0;
 }
 
+
+/*add by vsen team begin*/
+static int alspshub_factory_do_vsen_command(uint8_t sensorType, int32_t *args, int args_len)
+{
+	int err = 0;
+	vsen_eng_cmd cmd = args[0];
+	if (cmd == SENSOR_COMMAND_LIGHT_BOOST_NOTIRY) {
+		err = sensor_batch_to_hub(ID_LIGHT, 0, *(args + 1), *(args + 2));
+		pr_err("do_vsen_command (cmd)0x%x (val1)%d (val2)%d err(%d)\n", cmd, *(args + 1), *(args + 2), err);
+		return 0;
+	}
+
+#if defined CONFIG_VSEN_SCP_RESET_ENABLE
+	if (cmd == SENSOR_COMMAND_PROX_SET_ENG_CALI_DATA) {
+		ps_cali_data = *(args + 1);
+		pr_err("do_vsen_command save ps_cali_data:%d\n", ps_cali_data);
+	}
+
+	if (cmd == SENSOR_COMMAND_PROX_SET_CALI_OFFSET_DATA) {
+		ps_channel = *(args + 1);
+		pr_err("do_vivo_command save ps_channel:%d\n", ps_channel);
+	}
+
+	if (cmd == SENSOR_COMMAND_PROX_NOTIFY_PS_BROKEN) {
+		ps_hardware_broken = *(args + 1);
+		pr_err("do_vsen_command save ps_hardware_broken:%d\n", ps_hardware_broken);
+	}
+#endif
+
+	err = sensor_set_vsen_cmd_to_hub(sensorType, args, args_len);
+	pr_info("%s (cmd)0x%x (val1)%d (val2)%d err(%d)\n", __func__, cmd, *(args + 1), *(args + 2), err);
+	if (err < 0)
+		return -1;
+	return 0;
+}
+/*add by vsen team end*/
+
 static struct alsps_factory_fops alspshub_factory_fops = {
 	.als_enable_sensor = alshub_factory_enable_sensor,
 	.als_get_data = alshub_factory_get_data,
@@ -610,6 +730,7 @@ static struct alsps_factory_fops alspshub_factory_fops = {
 	.ps_get_cali = pshub_factory_get_cali,
 	.ps_set_threshold = pshub_factory_set_threshold,
 	.ps_get_threshold = pshub_factory_get_threshold,
+	.do_vsen_commands = alspshub_factory_do_vsen_command,
 };
 
 static struct alsps_factory_public alspshub_factory_device = {
@@ -719,6 +840,7 @@ static int rgbw_flush(void)
 {
 	return sensor_flush_to_hub(ID_RGBW);
 }
+
 
 static int als_get_data(int *value, int *status)
 {

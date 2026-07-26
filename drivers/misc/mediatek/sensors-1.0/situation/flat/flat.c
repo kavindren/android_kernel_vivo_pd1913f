@@ -161,6 +161,6 @@ static void __exit flat_exit(void)
 module_init(flat_init);
 module_exit(flat_exit);
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("GLANCE_GESTURE_HUB driver");
+MODULE_DESCRIPTION("FLAT driver");
 MODULE_AUTHOR("ruixue.su@mediatek.com");
 

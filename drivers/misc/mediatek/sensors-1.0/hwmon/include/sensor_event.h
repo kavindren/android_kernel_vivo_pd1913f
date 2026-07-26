@@ -34,7 +34,7 @@ struct sensor_event {
 	int8_t status;
 	int8_t reserved;
 	union {
-		int32_t word[6];
+		int32_t word[11];  /*modify for als report angle and motion state*/
 		int8_t byte[0];
 	};
 } __packed;
@@ -47,4 +47,6 @@ int sensor_input_event(unsigned char handle,
 			 const struct sensor_event *event);
 unsigned int sensor_event_register(unsigned char handle);
 unsigned int sensor_event_deregister(unsigned char handle);
+void clean_acc_buf(void);
+void clean_mag_buf(void);
 #endif

@@ -17,6 +17,8 @@
 #include "cust_gyro.h"
 #include "gyroscope.h"
 
+#include <linux/vsen_common.h> /* add by vsen team : gyro_vivo_command */
+
 struct gyro_factory_fops {
 	int (*enable_sensor)(bool enable_disable, int64_t sample_periods_ms);
 	int (*get_data)(int32_t data[3], int *status);
@@ -26,6 +28,9 @@ struct gyro_factory_fops {
 	int (*set_cali)(int32_t offset[3]);
 	int (*get_cali)(int32_t offset[3]);
 	int (*do_self_test)(void);
+
+	/* add by vsen team : gyro_vivo_command */
+	int (*do_vivo_commands)(uint8_t sensorType, int32_t *args, int args_len);
 };
 
 struct gyro_factory_public {

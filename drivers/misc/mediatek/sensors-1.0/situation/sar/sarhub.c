@@ -27,10 +27,13 @@ static struct situation_init_info sarhub_init_info;
 static DEFINE_SPINLOCK(calibration_lock);
 struct sarhub_ipi_data {
 	bool factory_enable;
+	bool android_enable;
+	atomic_t selftest_status;
 
 	int32_t cali_data[3];
 	int8_t cali_status;
 	struct completion calibration_done;
+	struct completion selftest_done;
 };
 static struct sarhub_ipi_data *obj_ipi_data;
 
@@ -40,6 +43,10 @@ static int sar_factory_enable_sensor(bool enabledisable,
 {
 	int err = 0;
 	struct sarhub_ipi_data *obj = obj_ipi_data;
+	if (obj->android_enable) {
+		pr_err("sar_factory_enable_sensor android enabled, don't enable or disable!\n");
+		return 0;
+	}
 
 	if (enabledisable == true)
 		WRITE_ONCE(obj->factory_enable, true);
@@ -107,6 +114,34 @@ static int sar_factory_get_cali(int32_t data[3])
 	}
 	return 0;
 }
+static int sar_factory_do_vsen_command(uint8_t sensorType, int32_t *args, int args_len)
+{
+	int err = 0;
+	vsen_eng_cmd cmd = args[0];
+	err = sensor_set_vsen_cmd_to_hub(sensorType, args, args_len);
+	pr_info("%s (cmd)0x%x (val1)%d (val2)%d err(%d)\n", __func__, cmd, *(args + 1), *(args + 2), err);
+	if (err < 0)
+		return -1;
+	return 0;
+}
+static int sar_factory_do_self_test(void)
+{
+	int ret = 0;
+	struct sarhub_ipi_data *obj = obj_ipi_data;
+
+	atomic_set(&obj->selftest_status, 1);
+
+	ret = sensor_selftest_to_hub(ID_SAR);
+	if (ret < 0)
+		return -1;
+
+	ret = wait_for_completion_timeout(&obj->selftest_done,
+					  msecs_to_jiffies(3000));
+	//pr_err_ratelimited("sar_factory_do_self_test %d ,ret=%d\n",obj->selftest_status, ret);
+	if (!ret)
+		return -1;
+	return atomic_read(&obj->selftest_status);
+}
 
 
 static struct sar_factory_fops sarhub_factory_fops = {
@@ -114,6 +149,8 @@ static struct sar_factory_fops sarhub_factory_fops = {
 	.get_data = sar_factory_get_data,
 	.enable_calibration = sar_factory_enable_calibration,
 	.get_cali = sar_factory_get_cali,
+	.do_vsen_commands = sar_factory_do_vsen_command,
+	.do_self_test = sar_factory_do_self_test,
 };
 
 static struct sar_factory_public sarhub_factory_device = {
@@ -140,6 +177,7 @@ static int sar_get_data(int *probability, int *status)
 static int sar_open_report_data(int open)
 {
 	int ret = 0;
+	struct sarhub_ipi_data *obj = obj_ipi_data;
 #if defined CONFIG_MTK_SCP_SENSORHUB_V1
 	if (open == 1)
 		ret = sensor_set_delay_to_hub(ID_SAR, 120);
@@ -149,6 +187,10 @@ static int sar_open_report_data(int open)
 
 #endif
 	ret = sensor_enable_to_hub(ID_SAR, open);
+	if (open)
+		obj->android_enable = true;
+	else
+		obj->android_enable = false;
 	return ret;
 }
 static int sar_batch(int flag,
@@ -166,8 +208,9 @@ static int sar_flush(void)
 static int sar_recv_data(struct data_unit_t *event, void *reserved)
 {
 	struct sarhub_ipi_data *obj = obj_ipi_data;
-	int32_t value[3] = {0};
+	int32_t value[6] = {0};
 	int err = 0;
+	//pr_err_ratelimited("event->flush_action=%d\n",event->flush_action);
 
 	if (event->flush_action == FLUSH_ACTION)
 		err = situation_flush_report(ID_SAR);
@@ -175,6 +218,9 @@ static int sar_recv_data(struct data_unit_t *event, void *reserved)
 		value[0] = event->sar_event.data[0];
 		value[1] = event->sar_event.data[1];
 		value[2] = event->sar_event.data[2];
+		/*pr_err_ratelimited("sar_recv_data:value[0,1,2,3,4,5]=%d,%d,%d,%d,%d\n",value[0], value[1],
+			value[2],value[3],value[4]);*/
+
 		err = sar_data_report_t(value, (int64_t)event->time_stamp);
 	} else if (event->flush_action == CALI_ACTION) {
 		spin_lock(&calibration_lock);
@@ -188,6 +234,10 @@ static int sar_recv_data(struct data_unit_t *event, void *reserved)
 			(int8_t)event->sar_event.status;
 		spin_unlock(&calibration_lock);
 		complete(&obj->calibration_done);
+	}  else if (event->flush_action == TEST_ACTION) {
+		atomic_set(&obj->selftest_status, event->sar_event.status);
+		//pr_err_ratelimited("sar_recv_data:event->sar_event.status=%d\n",event->sar_event.status);
+		complete(&obj->selftest_done);
 	}
 	return err;
 }
@@ -211,7 +261,9 @@ static int sarhub_local_init(void)
 	memset(obj, 0, sizeof(*obj));
 	obj_ipi_data = obj;
 	WRITE_ONCE(obj->factory_enable, false);
+	WRITE_ONCE(obj->android_enable, false);
 	init_completion(&obj->calibration_done);
+	init_completion(&obj->selftest_done);
 
 	ctl.open_report_data = sar_open_report_data;
 	ctl.batch = sar_batch;

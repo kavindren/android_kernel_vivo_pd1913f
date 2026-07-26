@@ -18,6 +18,9 @@
 
 #include <linux/ioctl.h>
 #include <linux/atomic.h>
+/* ADD by vsen team_SENSOR_DR_001 */
+#include <linux/vsen_common.h>
+/* ADD by vsen team_SENSOR_DR_001 */
 
 #if defined(CONFIG_MTK_SCP_SENSORHUB_V1)
 #error CONFIG_MTK_SCP_SENSORHUB_V1 should not configed
@@ -230,6 +233,17 @@ struct activity_t {
 	uint8_t probability[ACTIVITY_MAX];	/* 0~100 */
 };
 
+
+typedef struct {
+    int32_t value[5]; //lux r/g/b/c
+    int16_t angle_x;
+    int16_t angle_y;
+    int16_t angle_z;
+    int8_t id;
+    int8_t motion;
+} als_event_t;
+
+
 struct data_unit_t {
 	uint8_t sensor_type;
 	uint8_t flush_action;
@@ -267,6 +281,7 @@ struct data_unit_t {
 		struct geofence_event_t geofence_data_t;
 		struct sar_event_t sar_event;
 		int32_t data[8];
+		als_event_t als;
 	};
 } __packed;
 
@@ -376,7 +391,13 @@ enum CUST_ACTION {
 	CUST_ACTION_SHOW_ALSVAL,
 	CUST_ACTION_SET_FACTORY,
 	CUST_ACTION_GET_SENSOR_INFO,
+	CUST_ACTION_VSEN_COMMAND = 100,
 };
+
+typedef struct {
+	enum CUST_ACTION action;
+	int32_t data[VSEN_COMMAND_ARGS_SIZE];
+} SCP_SENSOR_HUB_CUST_VSEN_CMD;
 
 struct SCP_SENSOR_HUB_CUST {
 	enum CUST_ACTION action;
@@ -451,6 +472,7 @@ struct mag_dev_info_t {
 
 struct sensorInfo_t {
 	char name[16];
+	uint32_t version;
 	struct mag_dev_info_t mag_dev_info;
 };
 
@@ -486,6 +508,7 @@ struct SCP_SENSOR_HUB_SET_CUST_REQ {
 		struct SCP_SENSOR_HUB_SHOW_ALSVAL showAlsval;
 		struct SCP_SENSOR_HUB_SET_FACTORY setFactory;
 		struct scp_sensor_hub_get_sensor_info getInfo;
+		SCP_SENSOR_HUB_CUST_VSEN_CMD vsenCmds;
 	};
 };
 
@@ -498,6 +521,7 @@ struct SCP_SENSOR_HUB_SET_CUST_RSP {
 		uint32_t custData[11];
 		struct SCP_SENSOR_HUB_GET_RAW_DATA getRawData;
 		struct scp_sensor_hub_get_sensor_info getInfo;
+		SCP_SENSOR_HUB_CUST_VSEN_CMD vsenCmds;
 	};
 };
 
@@ -555,5 +579,6 @@ int sensor_flush_to_hub(uint8_t sensorType);
 int sensor_cfg_to_hub(uint8_t sensorType, uint8_t *data, uint8_t count);
 int sensor_calibration_to_hub(uint8_t sensorType);
 int sensor_selftest_to_hub(uint8_t sensorType);
+int sensor_set_vsen_cmd_to_hub(uint8_t sensorType, int32_t *args, int args_len);
 #endif
 #endif

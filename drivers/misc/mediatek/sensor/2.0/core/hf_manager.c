@@ -45,7 +45,8 @@ static const struct coordinate coordinates[] = {
 static DECLARE_BITMAP(sensor_list_bitmap, SENSOR_TYPE_SENSOR_MAX);
 static struct hf_core hfcore;
 
-#define print_s64(l) (((l) == S64_MAX) ? -1 : (l))
+//#define HF_MANAGER_DEBUG
+#define print_s64(l) ((l == S64_MAX) ? -1 : l)
 static int hf_manager_find_client(struct hf_core *core,
 		struct hf_manager_event *event);
 
@@ -63,9 +64,6 @@ static void init_hf_core(struct hf_core *core)
 
 	spin_lock_init(&core->client_lock);
 	INIT_LIST_HEAD(&core->client_list);
-
-	mutex_init(&core->device_lock);
-	INIT_LIST_HEAD(&core->device_list);
 
 	kthread_init_worker(&core->kworker);
 }
@@ -255,31 +253,6 @@ static void hf_manager_io_interrupt(struct hf_manager *manager,
 	hf_manager_sched_sample(manager, timestamp);
 }
 
-int hf_device_register(struct hf_device *device)
-{
-	struct hf_core *core = &hfcore;
-
-	INIT_LIST_HEAD(&device->list);
-	device->ready = false;
-	mutex_lock(&core->device_lock);
-	list_add(&device->list, &core->device_list);
-	mutex_unlock(&core->device_lock);
-
-	return 0;
-}
-EXPORT_SYMBOL_GPL(hf_device_register);
-
-void hf_device_unregister(struct hf_device *device)
-{
-	struct hf_core *core = &hfcore;
-
-	mutex_lock(&core->device_lock);
-	list_del(&device->list);
-	mutex_unlock(&core->device_lock);
-	device->ready = false;
-}
-EXPORT_SYMBOL_GPL(hf_device_unregister);
-
 int hf_manager_create(struct hf_device *device)
 {
 	uint8_t sensor_type = 0;
@@ -344,10 +317,6 @@ int hf_manager_create(struct hf_device *device)
 	list_add(&manager->list, &manager->core->manager_list);
 	mutex_unlock(&manager->core->manager_lock);
 
-	mutex_lock(&manager->core->device_lock);
-	manager->hf_dev->ready = true;
-	mutex_unlock(&manager->core->device_lock);
-
 	return 0;
 out_err:
 	kfree(manager);
@@ -356,14 +325,14 @@ out_err:
 }
 EXPORT_SYMBOL_GPL(hf_manager_create);
 
-void hf_manager_destroy(struct hf_manager *manager)
+int hf_manager_destroy(struct hf_manager *manager)
 {
 	uint8_t sensor_type = 0;
 	int i = 0;
 	struct hf_device *device = NULL;
 
 	if (!manager || !manager->hf_dev || !manager->hf_dev->support_list)
-		return;
+		return -EINVAL;
 
 	device = manager->hf_dev;
 	for (i = 0; i < device->support_size; ++i) {
@@ -389,28 +358,10 @@ void hf_manager_destroy(struct hf_manager *manager)
 		cpu_relax();
 
 	kfree(manager);
+	return 0;
 }
 EXPORT_SYMBOL_GPL(hf_manager_destroy);
 
-int hf_device_register_manager_create(struct hf_device *device)
-{
-	int ret = 0;
-
-	ret = hf_device_register(device);
-	if (ret < 0)
-		return ret;
-	return hf_manager_create(device);
-}
-EXPORT_SYMBOL_GPL(hf_device_register_manager_create);
-
-void hf_device_unregister_manager_destroy(struct hf_device *device)
-{
-	hf_manager_destroy(device->manager);
-	hf_device_unregister(device);
-}
-EXPORT_SYMBOL_GPL(hf_device_unregister_manager_destroy);
-
-extern int is_under_screen_prox;
 static int hf_manager_distinguish_event(struct hf_client *client,
 		struct hf_manager_event *event)
 {
@@ -421,7 +372,7 @@ static int hf_manager_distinguish_event(struct hf_client *client,
 	switch (event->action) {
 	case DATA_ACTION:
 		/* must relay on enable status client requested */
-		if (READ_ONCE(request->enable) &&
+		if (READ_ONCE(request->enable) && READ_ONCE(request->data) &&
 				(event->timestamp >
 					atomic64_read(&request->start_time)))
 			err = hf_manager_report_event(client, event);
@@ -443,11 +394,12 @@ static int hf_manager_distinguish_event(struct hf_client *client,
 		spin_lock_irqsave(&client->request_lock, flags);
 		if (atomic_read(&request->flush) > 0) {
 			err = hf_manager_report_event(client, event);
-			/*proximity underdisplay flush in kernel*/
-			if (is_under_screen_prox && event->sensor_type == SENSOR_TYPE_PROXIMITY) {
+#ifdef CONFIG_PROXIMITY_UNDERDISPLAY
+			if (event->sensor_type == SENSOR_TYPE_PROXIMITY) {
 				event->sensor_type = COMM_SENSOR_TYPE_PROXIMITY_UNDERDISPLAY;
-				err = hf_manager_report_event(client, event);
+				hf_manager_report_event(client, event);
 			}
+#endif
 			/* return < 0, don't decrease flush count */
 			if (err < 0) {
 				spin_unlock_irqrestore(&client->request_lock,
@@ -533,7 +485,6 @@ static struct hf_manager *hf_manager_find_manager(struct hf_core *core,
 static void hf_manager_update_client_param(struct hf_client *client,
 		struct hf_manager_cmd *cmd, struct sensor_state *old)
 {
-	struct hf_manager_batch *batch = (struct hf_manager_batch *)cmd->data;
 	struct sensor_state *request = &client->request[cmd->sensor_type];
 
 	/* only enable disable update action delay and latency */
@@ -549,11 +500,13 @@ static void hf_manager_update_client_param(struct hf_client *client,
 			atomic64_set(&request->start_time,
 				ktime_get_boot_ns());
 		request->enable = true;
-		request->delay = batch->delay;
-		request->latency = batch->latency;
+		request->data   = true;
+		request->delay = cmd->delay;
+		request->latency = cmd->latency;
 	} else if (cmd->action == HF_MANAGER_SENSOR_DISABLE) {
 		atomic64_set(&request->start_time, S64_MAX);
 		request->enable = false;
+		request->data = false;
 		request->delay = S64_MAX;
 		request->latency = S64_MAX;
 	}
@@ -592,7 +545,6 @@ static void hf_manager_find_best_param(struct hf_core *core,
 	bool tmp_enable = false;
 	int64_t tmp_delay = S64_MAX;
 	int64_t tmp_latency = S64_MAX;
-	const int64_t max_latency_ns = 2000000000000LL;
 
 	spin_lock_irqsave(&core->client_lock, flags);
 	list_for_each_entry(client, &core->client_list, list) {
@@ -607,8 +559,8 @@ static void hf_manager_find_best_param(struct hf_core *core,
 	}
 	spin_unlock_irqrestore(&core->client_lock, flags);
 	*action = tmp_enable;
-	*delay = tmp_delay > 0 ? tmp_delay : 0;
-	*latency = tmp_latency < max_latency_ns ? tmp_latency : max_latency_ns;
+	*delay = tmp_delay;
+	*latency = tmp_latency;
 
 #ifdef HF_MANAGER_DEBUG
 	if (tmp_enable)
@@ -794,10 +746,12 @@ static int hf_manager_device_calibration(struct hf_device *device,
 }
 
 static int hf_manager_device_config_cali(struct hf_device *device,
-		uint8_t sensor_type, void *data, uint8_t length)
+		uint8_t sensor_type, int32_t *data)
 {
+	pr_err("%s: data[0] = %d,data[1] = %d,data[2] = %d\n",
+		__func__, data[0], data[1], data[2]);
 	if (device->config_cali)
-		return device->config_cali(device, sensor_type, data, length);
+		return device->config_cali(device, sensor_type, data);
 	return 0;
 }
 
@@ -884,10 +838,6 @@ static int hf_manager_custom_cmd(struct hf_client *client,
 	struct hf_device *device = NULL;
 	int ret = 0;
 
-	if (cust_cmd->tx_len > sizeof(cust_cmd->data) ||
-		cust_cmd->rx_len > sizeof(cust_cmd->data))
-		return -EINVAL;
-
 	mutex_lock(&client->core->manager_lock);
 	manager = hf_manager_find_manager(client->core, sensor_type);
 	if (!manager) {
@@ -919,8 +869,8 @@ static int hf_manager_drive_device(struct hf_client *client,
 
 	if (unlikely(sensor_type >= SENSOR_TYPE_SENSOR_MAX))
 		return -EINVAL;
-	pr_err("%s: cmd.data[0] = %d,cmd.data[1] = %d,cmd.data[2] = %d\n",
-		__func__, cmd->data[0], cmd->data[1], cmd->data[2]);
+	pr_err("%s: type:%d cmd.data[0] = %d,cmd.data[1] = %d,cmd.data[2] = %d\n",
+		__func__, (int)sensor_type, cmd->data[0], cmd->data[1], cmd->data[2]);
 
 	mutex_lock(&core->manager_lock);
 	manager = hf_manager_find_manager(core, sensor_type);
@@ -963,7 +913,7 @@ static int hf_manager_drive_device(struct hf_client *client,
 		break;
 	case HF_MANAGER_SENSOR_CONFIG_CALI:
 		err = hf_manager_device_config_cali(device,
-			sensor_type, cmd->data, cmd->length);
+			sensor_type, cmd->data);
 		break;
 	case HF_MANAGER_SENSOR_SELFTEST:
 		err = hf_manager_device_selftest(device, sensor_type);
@@ -975,6 +925,17 @@ static int hf_manager_drive_device(struct hf_client *client,
 		if (err < 0)
 			client->request[sensor_type].raw = false;
 		break;
+	case HF_MANAGER_SENSOR_SELECT_CHANNEL:
+		pr_err("%s SELECT_CHANNEL: sens:%d, act:%d, en:%d", __func__,
+				sensor_type, cmd->data[0], cmd->data[1]);
+		switch (cmd->data[0]) {
+		case DATA_ACTION:
+			client->request[sensor_type].data = cmd->data[1]?true:false;
+			break;
+		case RAW_ACTION:
+			client->request[sensor_type].raw = cmd->data[1]?true:false;
+			break;
+		}
 	default:
 		pr_err("Unknown action %u\n", cmd->action);
 		err = -EINVAL;
@@ -1037,7 +998,6 @@ err_free:
 err_out:
 	return NULL;
 }
-EXPORT_SYMBOL_GPL(hf_client_create);
 
 void hf_client_destroy(struct hf_client *client)
 {
@@ -1266,8 +1226,7 @@ static long hf_manager_ioctl(struct file *filp,
 	uint8_t sensor_type = 0;
 	struct ioctl_packet packet;
 	struct sensor_info info;
-	struct custom_cmd *cust_cmd = NULL;
-	struct hf_device *device = NULL;
+	struct custom_cmd cust_cmd;
 
 	memset(&packet, 0, sizeof(packet));
 
@@ -1312,26 +1271,13 @@ static long hf_manager_ioctl(struct file *filp,
 	case HF_MANAGER_REQUEST_CUST_DATA:
 		if (!test_bit(sensor_type, sensor_list_bitmap))
 			return -EINVAL;
-		if (sizeof(packet.byte) < sizeof(*cust_cmd))
+		memset(&cust_cmd, 0, sizeof(cust_cmd));
+		memcpy(cust_cmd.data, packet.byte, sizeof(cust_cmd.data));
+		if (hf_manager_custom_cmd(client, sensor_type, &cust_cmd))
 			return -EINVAL;
-		cust_cmd = (struct custom_cmd *)packet.byte;
-		if (hf_manager_custom_cmd(client, sensor_type, cust_cmd))
+		if (sizeof(packet.byte) < sizeof(cust_cmd))
 			return -EINVAL;
-		if (copy_to_user(ubuf, &packet, sizeof(packet)))
-			return -EFAULT;
-		break;
-	case HF_MANAGER_REQUEST_READY_STATUS:
-		mutex_lock(&client->core->device_lock);
-		packet.status = true;
-		list_for_each_entry(device, &client->core->device_list, list) {
-			if (!READ_ONCE(device->ready)) {
-				pr_err_ratelimited("Device:%s not ready\n",
-					device->dev_name);
-				packet.status = false;
-				break;
-			}
-		}
-		mutex_unlock(&client->core->device_lock);
+		memcpy(packet.byte, &cust_cmd, sizeof(cust_cmd));
 		if (copy_to_user(ubuf, &packet, sizeof(packet)))
 			return -EFAULT;
 		break;
@@ -1362,8 +1308,6 @@ static int hf_manager_proc_show(struct seq_file *m, void *v)
 	struct hf_manager *manager = NULL;
 	struct hf_client *client = NULL;
 	struct hf_device *device = NULL;
-	const unsigned int debug_len = 4096;
-	uint8_t *debug_buffer = NULL;
 
 	seq_puts(m, "**************************************************\n");
 	seq_puts(m, "Manager List:\n");
@@ -1384,7 +1328,7 @@ static int hf_manager_proc_show(struct seq_file *m, void *v)
 			device->device_bus ? "io_async" : "io_sync");
 		for (i = 0; i < device->support_size; ++i) {
 			sensor_type = device->support_list[i].sensor_type;
-			seq_printf(m, "  (%d) type:%u info:[%u, %d, %s,%s]\n",
+			seq_printf(m, "  (%d) type:%u info:[%u,%d,%s,%s]\n",
 				k++,
 				sensor_type,
 				device->support_list[i].gain,
@@ -1428,29 +1372,12 @@ static int hf_manager_proc_show(struct seq_file *m, void *v)
 	for (i = 0; i < SENSOR_TYPE_SENSOR_MAX; ++i) {
 		if (!core->state[i].enable)
 			continue;
-		seq_printf(m, "%d. type:%d param:[%lld,%lld]\n",
+		seq_printf(m, " (%d) type:%d param:[%lld,%lld]\n",
 			j++,
 			i,
 			core->state[i].delay,
 			core->state[i].latency);
 	}
-	mutex_unlock(&core->manager_lock);
-
-	seq_puts(m, "**************************************************\n");
-	mutex_lock(&core->manager_lock);
-	debug_buffer = kzalloc(debug_len, GFP_KERNEL);
-	list_for_each_entry(manager, &core->manager_list, list) {
-		device = READ_ONCE(manager->hf_dev);
-		if (!device || !device->support_list || !device->debug)
-			continue;
-		if (device->debug(device, SENSOR_TYPE_INVALID, debug_buffer,
-				debug_len) > 0) {
-			seq_printf(m, "Debug Sub Module: %s\n",
-				device->dev_name);
-			seq_printf(m, "%s\n", debug_buffer);
-		}
-	}
-	kfree(debug_buffer);
 	mutex_unlock(&core->manager_lock);
 	return 0;
 }

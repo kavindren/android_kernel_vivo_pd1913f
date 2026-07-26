@@ -66,7 +66,7 @@ static int ipi_txrx_bufs(struct ipi_transfer *t)
 	hw->tx_len = t->tx_len;
 	hw->rx_len = t->rx_len;
 
-	reinit_completion(&hw->done);
+	init_completion(&hw->done);
 	hw->context = &hw->done;
 	spin_unlock_irqrestore(&hw_transfer_lock, flags);
 	do {
@@ -89,8 +89,10 @@ static int ipi_txrx_bufs(struct ipi_transfer *t)
 	if (retry >= 100)
 		pr_debug("retry time:%d\n", retry);
 
-	timeout = wait_for_completion_timeout(&hw->done,
-			msecs_to_jiffies(1000));
+	if (status != SCP_IPI_NOT_READY) {
+		timeout = wait_for_completion_timeout(&hw->done, msecs_to_jiffies(500));
+	}
+
 	spin_lock_irqsave(&hw_transfer_lock, flags);
 	if (!timeout) {
 		pr_err("transfer timeout!");
@@ -245,7 +247,6 @@ out:
 
 int mtk_nanohub_ipi_init(void)
 {
-	init_completion(&hw_transfer.done);
 	INIT_WORK(&hw_master.work, ipi_work);
 	INIT_LIST_HEAD(&hw_master.head);
 	spin_lock_init(&hw_master.lock);
@@ -257,7 +258,6 @@ int mtk_nanohub_ipi_init(void)
 
 	return 0;
 }
-
 
 MODULE_AUTHOR("Mediatek");
 MODULE_DESCRIPTION("mtk_nanohub_ipi driver");

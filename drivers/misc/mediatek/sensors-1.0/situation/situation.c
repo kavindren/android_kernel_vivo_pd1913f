@@ -80,6 +80,42 @@ static int handle_to_index(int handle)
 	case ID_SAR:
 		index = sar;
 		break;
+	case ID_SAR_SECONDARY:
+		index = sar_secondary;
+		break;
+	case ID_ANGLE_JUDGE:
+		index = angle_judge;
+		break;
+	case ID_AMD:
+		index = amd;
+		break;
+	case ID_RAISEUP_DETECT:
+		index = raiseup_detect;
+		break;
+	case ID_PUTDOWN_DETECT:
+		index = putdown_detect;
+		break;
+	case ID_ANGLE_DIRECTION:
+		index = angle_direction;
+		break;
+	case ID_DROPDOWN_DETECT:
+		index = dropdown_detect;
+		break;
+	case ID_WINDOW_ORIENTATION:
+		index = window_orientation;
+		break;
+	case ID_AMBIENT_LIGHT_SCENE:
+		index = ambient_light_scene;
+		break;
+	case ID_VIVOMOTION_DETECT:
+		index = vivomotion_detect;
+		break;
+	case ID_SMARTPROX_DETECT:
+		index = smartprox_detect;
+		break;
+	case ID_DROPDEPTH_DETECT:
+		index = dropdepth_detect;
+		break;
 	default:
 		index = -1;
 		pr_err("%s invalid handle:%d,index:%d\n", __func__,
@@ -104,7 +140,15 @@ int situation_data_report_t(int handle, uint32_t one_sample_data,
 		return -1;
 	}
 
-	pr_debug("situation_notify handle:%d, index:%d\n", handle, index);
+	if (handle == ID_WINDOW_ORIENTATION)
+		pr_err("[WINDOW_ORIENTATION]%s! %d \n", __func__, one_sample_data);
+
+	if (handle == ID_AMD)
+		pr_err("[AMD]%s! %d \n", __func__, one_sample_data);
+
+	if (handle == ID_RAISEUP_DETECT)
+		pr_err("[RAISEUP_DETECT]%s! %d\n", __func__, one_sample_data);
+	//pr_debug("situation_notify handle:%d, index:%d\n", handle, index);
 	event.time_stamp = time_stamp;
 	event.handle = handle;
 	event.flush_action = DATA_ACTION;
@@ -119,7 +163,7 @@ int situation_data_report(int handle, uint32_t one_sample_data)
 {
 	return situation_data_report_t(handle, one_sample_data, 0);
 }
-int sar_data_report_t(int32_t value[3], int64_t time_stamp)
+int sar_data_report_t(int32_t value[6], int64_t time_stamp)
 {
 	int err = 0, index = -1;
 	struct sensor_event event;
@@ -138,16 +182,85 @@ int sar_data_report_t(int32_t value[3], int64_t time_stamp)
 	event.word[0] = value[0];
 	event.word[1] = value[1];
 	event.word[2] = value[2];
+	event.word[3] = value[3];
+	event.word[4] = value[4];
+	event.word[5] = value[5];
 	err = sensor_input_event(situation_context_obj->mdev.minor, &event);
 	if (cxt->ctl_context[index].situation_ctl.open_report_data != NULL &&
 		cxt->ctl_context[index].situation_ctl.is_support_wake_lock)
 		__pm_wakeup_event(&cxt->ws[index], 250);
 	return err;
 }
-int sar_data_report(int32_t value[3])
+int sar_data_report(int32_t value[6])
 {
 	return sar_data_report_t(value, 0);
 }
+
+int sar_secondary_data_report_t(int32_t value[6], int64_t time_stamp)
+{
+	int err = 0, index = -1;
+	struct sensor_event event;
+	struct situation_context *cxt = situation_context_obj;
+
+	memset(&event, 0, sizeof(struct sensor_event));
+
+	index = handle_to_index(ID_SAR_SECONDARY);
+	if (index < 0) {
+		pr_err("[%s] invalid index\n", __func__);
+		return -1;
+	}
+	event.time_stamp = time_stamp;
+	event.handle = ID_SAR_SECONDARY;
+	event.flush_action = DATA_ACTION;
+	event.word[0] = value[0];
+	event.word[1] = value[1];
+	event.word[2] = value[2];
+	event.word[3] = value[3];
+	event.word[4] = value[4];
+	event.word[5] = value[5];
+	err = sensor_input_event(situation_context_obj->mdev.minor, &event);
+	if (cxt->ctl_context[index].situation_ctl.open_report_data != NULL &&
+		cxt->ctl_context[index].situation_ctl.is_support_wake_lock)
+		__pm_wakeup_event(&cxt->ws[index], 250);
+	return err;
+}
+
+int sar_secondary_data_report(int32_t value[6])
+{
+	return sar_secondary_data_report_t(value, 0);
+}
+
+int smartprox_data_report_t(int32_t value[3], int64_t time_stamp)
+{
+	int err = 0, index = -1;
+	struct sensor_event event;
+	struct situation_context *cxt = situation_context_obj;
+
+	memset(&event, 0, sizeof(struct sensor_event));
+
+	index = handle_to_index(ID_SMARTPROX_DETECT);
+	if (index < 0) {
+		pr_err("[%s] invalid index\n", __func__);
+		return -1;
+	}
+	event.time_stamp = time_stamp;
+	event.handle = ID_SMARTPROX_DETECT;
+	event.flush_action = DATA_ACTION;
+	event.word[0] = value[0];
+	event.word[1] = value[1];
+	event.word[2] = value[2];
+	err = sensor_input_event(situation_context_obj->mdev.minor, &event);
+	if (cxt->ctl_context[index].situation_ctl.open_report_data != NULL &&
+		cxt->ctl_context[index].situation_ctl.is_support_wake_lock)
+		__pm_wakeup_event(&cxt->ws[index], 250);
+	return err;
+}
+
+int smartprox_data_report(int32_t value[3])
+{
+	return smartprox_data_report_t(value, 0);
+}
+
 int situation_notify_t(int handle, int64_t time_stamp)
 {
 	return situation_data_report_t(handle, 1, time_stamp);
@@ -287,7 +400,9 @@ static ssize_t situation_store_active(struct device *dev,
 	err = situation_enable_and_batch(index);
 #endif
 	pr_debug("%s done\n", __func__);
+#ifdef CONFIG_NANOHUB
 err_out:
+#endif
 	mutex_unlock(&situation_context_obj->situation_op_mutex);
 	if (err)
 		return err;
@@ -360,9 +475,7 @@ static ssize_t situation_store_batch(struct device *dev,
 	err = situation_enable_and_batch(index);
 #endif
 	pr_debug("%s done\n", __func__);
-#ifdef CONFIG_NANOHUB
 err_out:
-#endif
 	mutex_unlock(&situation_context_obj->situation_op_mutex);
 	if (err)
 		return err;
@@ -543,7 +656,7 @@ int situation_register_data_path(struct situation_data_path *data,
 	int index = -1;
 
 	if (NULL == data || NULL == data->get_data) {
-		pr_debug("situ register data path fail\n");
+		pr_err("situ register data path fail\n");
 		return -1;
 	}
 

@@ -56,6 +56,7 @@ struct gyrohub_ipi_data {
 	struct completion selftest_done;
 };
 static struct gyrohub_ipi_data *obj_ipi_data;
+static int gyro_cali[3] = {0}; //add by vsen team for save gyro calidata
 
 static int gyrohub_get_data(int *x, int *y, int *z, int *status);
 
@@ -448,6 +449,10 @@ static void scp_init_work_done(struct work_struct *work)
 	int32_t cfg_data[12] = {0};
 #endif
 
+#if defined CONFIG_VSEN_SCP_RESET_ENABLE
+	int32_t cmd_args[VSEN_COMMAND_ARGS_SIZE] = {0};
+#endif
+
 	if (atomic_read(&obj->scp_init_done) == 0) {
 		pr_err("scp is not ready to send cmd\n");
 		return;
@@ -480,6 +485,22 @@ static void scp_init_work_done(struct work_struct *work)
 	if (err < 0)
 		pr_err("sensor_cfg_to_hub fail\n");
 #endif
+
+	/* ADD by vsen team start */
+#ifdef CONFIG_VSEN_SCP_RESET_ENABLE
+	pr_info("gyro_cali: %d %d %d\n", gyro_cali[0], gyro_cali[1], gyro_cali[2]);
+	if (gyro_cali[0] != 0 || gyro_cali[1] != 0 || gyro_cali[2] != 0) {
+		cmd_args[0] = SENSOR_COMMAND_GYRO_SET_ENG_CALI_DATA;
+		cmd_args[1] = gyro_cali[0];
+		cmd_args[2] = gyro_cali[1];
+		cmd_args[3] = gyro_cali[2];
+		err = sensor_set_vsen_cmd_to_hub(ID_GYROSCOPE, cmd_args, ARRAY_SIZE(cmd_args));
+		if (err < 0)
+			pr_err("set acc calidata fail\n");
+	}
+#endif
+	/* ADD by vsen team end */
+
 }
 
 static int gyro_recv_data(struct data_unit_t *event, void *reserved)
@@ -562,6 +583,14 @@ static int gyrohub_factory_enable_sensor(bool enabledisable,
 			return -1;
 		}
 	}
+
+	/* Add by vsen team: Android framework enable gryo, keep current state begin */
+	if (READ_ONCE(obj->android_enable) == true) {
+		pr_info("gyro factory_enable do nothing when android enable\n");
+		return 0;
+	}
+	/* Add by vsen team: Android framework enable gryo, keep current state end */
+
 	err = sensor_enable_to_hub(ID_GYROSCOPE, enabledisable);
 	if (err) {
 		pr_err("sensor_enable_to_hub failed!\n");
@@ -574,9 +603,6 @@ static int gyrohub_factory_get_data(int32_t data[3], int *status)
 	int ret = 0;
 
 	ret = gyrohub_get_data(&data[0], &data[1], &data[2], status);
-	data[0] = data[0] / 1000;
-	data[1] = data[1] / 1000;
-	data[2] = data[2] / 1000;
 
 	return ret;
 }
@@ -655,15 +681,38 @@ static int gyrohub_factory_do_self_test(void)
 	struct gyrohub_ipi_data *obj = obj_ipi_data;
 
 	ret = sensor_selftest_to_hub(ID_GYROSCOPE);
-	if (ret < 0)
+	if (ret < 0){
+		pr_err("sensor_selftest_to_hub falied!\n");
 		return -1;
+	}
 
 	ret = wait_for_completion_timeout(&obj->selftest_done,
-					  msecs_to_jiffies(3000));
-	if (!ret)
+					  msecs_to_jiffies(5000));
+	if (!ret){
+		pr_err("gyrohub_factory_do_self_test timeout!\n");
 		return -1;
+	}
 	return atomic_read(&obj->selftest_status);
 }
+
+/* add by vsen team : gyro_vivo_command begin */
+static int gyrohub_factory_do_vivo_command(uint8_t sensorType, int32_t *args, int args_len)
+{
+	int err = 0;
+
+	if (args[0] == SENSOR_COMMAND_GYRO_SET_ENG_CALI_DATA) {
+		gyro_cali[0] = args[1];
+		gyro_cali[1] = args[2];
+		gyro_cali[2] = args[3];
+		pr_info("%s save gyro_cali %d %d %d\n", __func__, gyro_cali[0], gyro_cali[1], gyro_cali[2]);
+	}
+	err = sensor_set_vsen_cmd_to_hub(sensorType, args, args_len);
+	pr_info("%s (cmd)0x%x (val1)%d (val2)%d err(%d)\n", __func__, *(args + 0), *(args + 1), *(args + 2), err);
+	if (err < 0)
+		return -1;
+	return 0;
+}
+/* add by vsen team : gyro_vivo_command end */
 
 static struct gyro_factory_fops gyrohub_factory_fops = {
 	.enable_sensor = gyrohub_factory_enable_sensor,
@@ -674,6 +723,9 @@ static struct gyro_factory_fops gyrohub_factory_fops = {
 	.set_cali = gyrohub_factory_set_cali,
 	.get_cali = gyrohub_factory_get_cali,
 	.do_self_test = gyrohub_factory_do_self_test,
+
+	/* add by vsen team : gyro_vivo_command */
+	.do_vivo_commands = gyrohub_factory_do_vivo_command,
 };
 
 static struct gyro_factory_public gyrohub_factory_device = {

@@ -951,7 +951,9 @@ int step_c_data_report_t(uint32_t new_counter, int status, int64_t time_stamp)
 		event.word[0] = new_counter;
 		err = sensor_input_event(step_c_context_obj->mdev.minor,
 			&event);
-		if (err >= 0)
+		pr_err("new_counter:%d, last_step_counter:%d\n", new_counter,
+				last_step_counter);
+		if (err == 0)
 			last_step_counter = new_counter;
 	}
 	return err;

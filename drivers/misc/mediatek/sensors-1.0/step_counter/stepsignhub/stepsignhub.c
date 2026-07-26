@@ -441,5 +441,5 @@ static void __exit step_chub_exit(void)
 module_init(step_chub_init);
 module_exit(step_chub_exit);
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("GLANCE_GESTURE_HUB driver");
+MODULE_DESCRIPTION("step_chub driver");
 MODULE_AUTHOR("hongxu.zhao@mediatek.com");

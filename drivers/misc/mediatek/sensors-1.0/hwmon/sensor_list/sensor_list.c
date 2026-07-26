@@ -28,6 +28,7 @@
 
 struct sensorlist_info_t {
 	char name[16];
+	uint32_t version;
 };
 
 enum {
@@ -38,6 +39,7 @@ enum {
 	ps,
 	baro,
 	sar,
+	sar_secondary,
 	maxhandle,
 };
 
@@ -74,6 +76,10 @@ inline int sensor_to_handle(int sensor)
 	case ID_SAR:
 		handle = sar;
 		break;
+	case ID_SAR_SECONDARY:
+		sensor = sar_secondary;
+		break;
+
 	}
 	return handle;
 }
@@ -104,6 +110,10 @@ static inline int handle_to_sensor(int handle)
 	case sar:
 		sensor = ID_SAR;
 		break;
+	case sar_secondary:
+		sensor = ID_SAR_SECONDARY;
+		break;
+
 	}
 	return sensor;
 }
@@ -139,6 +149,7 @@ static void sensorlist_get_deviceinfo(struct work_struct *work)
 		strlcpy(sensorlist_info[handle].name,
 			devinfo.name,
 			sizeof(sensorlist_info[handle].name));
+		sensorlist_info[handle].version = devinfo.version;
 		spin_unlock(&sensorlist_info_lock);
 	}
 }

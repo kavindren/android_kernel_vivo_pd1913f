@@ -15,6 +15,7 @@
 
 #include "inc/alsps.h"
 #include "inc/aal_control.h"
+
 struct alsps_context *alsps_context_obj /* = NULL*/;
 struct platform_device *pltfm_dev;
 int last_als_report_data = -1;
@@ -43,7 +44,9 @@ int als_data_report_t(int value, int status, int64_t time_stamp)
 		err = sensor_input_event(cxt->als_mdev.minor, &event);
 		cxt->is_get_valid_als_data_after_enable = true;
 	}
-	if (value != last_als_report_data) {
+	/*Modify be vsen team begin*/
+	if (true/*value != last_als_report_data*/) {
+		/*Modify by vsen team end REASON:we need light sensor to continue report the data*/
 		event.handle = ID_LIGHT;
 		event.flush_action = DATA_ACTION;
 		event.word[0] = value;
@@ -54,6 +57,50 @@ int als_data_report_t(int value, int status, int64_t time_stamp)
 	}
 	return err;
 }
+
+	/* Add by vsen team_ALS_PS_002 Begin */
+#ifdef CONFIG_ALS_DATA_REPORT_EXTENSION
+int als_extension_data_report_t(als_event_t alsdata, int status, int64_t time_stamp)
+{
+	int err = 0;
+	struct alsps_context *cxt = NULL;
+	struct sensor_event event;
+	static int64_t last_time_stamp;
+	memset(&event, 0, sizeof(struct sensor_event));
+
+	cxt = alsps_context_obj;
+    event.time_stamp = time_stamp;
+	if (cxt->is_get_valid_als_data_after_enable == false) {
+		cxt->is_get_valid_als_data_after_enable = true;
+	}
+
+	event.handle = ID_LIGHT;
+	event.flush_action = DATA_ACTION;
+	event.word[0] = alsdata.value[0];
+	event.word[1] = alsdata.value[1];
+	event.word[2] = alsdata.value[2];
+	event.word[3] = alsdata.value[3];
+	event.word[4] = alsdata.value[4];
+	event.word[5] = (int32_t)alsdata.id;
+	event.word[6] = (int32_t)alsdata.angle_x;
+	event.word[7] = (int32_t)alsdata.angle_y;
+	event.word[8] = (int32_t)alsdata.angle_z;
+	event.word[9] = (int32_t)alsdata.motion;
+	event.status = status;
+	if((time_stamp - last_time_stamp) > 500000000)
+	{
+		pr_err("%s als_data: %d %d %d %d %d id:%d angle:%d %d %d motion:%d\n", __func__,
+		event.word[0], event.word[1], event.word[2], event.word[3], event.word[4],
+		event.word[5], event.word[6], event.word[7], event.word[8], event.word[9]);
+		last_time_stamp = time_stamp;
+	}
+	err = sensor_input_event(cxt->als_mdev.minor, &event);
+	last_als_report_data = alsdata.value[0];
+	return err;
+}
+#endif
+	/* Add by vsen team_ALS_PS_002 End */
+
 int als_data_report(int value, int status)
 {
 	return als_data_report_t(value, status, 0);
@@ -125,15 +172,27 @@ int ps_data_report_t(int value, int status, int64_t time_stamp)
 {
 	int err = 0;
 	struct sensor_event event;
+	/* add by vsen team begin */
+	uint32_t distance = value & 0xF;
+	uint32_t raw_data = (value & 0xFFFFFFF0) >> 4;
+	/* add by vsen team end */
 
 	memset(&event, 0, sizeof(struct sensor_event));
 
-	pr_notice("[ALS/PS]%s! %d, %d\n", __func__, value, status);
+	pr_err("[ALS/PS]%s! (distance %d - raw_data %d, now:%lld evt:%lld)\n", __func__, distance,
+			raw_data, ktime_get_boot_ns(), time_stamp);
 	event.flush_action = DATA_ACTION;
 	event.time_stamp = time_stamp;
-	event.word[0] = value + 1;
+	/* modify by vsen team begin */
+	/*event.word[0] = value + 1;*/
+	event.word[0] = distance + 1;
+	event.word[1] = raw_data;
+	/* modify by vsen team end */
 	event.status = status;
 	err = sensor_input_event(alsps_context_obj->ps_mdev.minor, &event);
+	if (err < 0)
+		pr_err_ratelimited("event buffer full, so drop this data\n");
+
 	return err;
 }
 int ps_data_report(int value, int status)

@@ -38,6 +38,18 @@ enum situation_index_table {
 	tilt_detector,
 	flat,
 	sar,
+	sar_secondary,
+	angle_judge,
+	amd,
+	raiseup_detect,
+	putdown_detect,
+	angle_direction,
+	dropdown_detect,
+    window_orientation,
+	ambient_light_scene,
+	vivomotion_detect,
+	smartprox_detect,
+	dropdepth_detect,
 	max_situation_support,
 };
 
@@ -92,6 +104,10 @@ extern int situation_register_control_path(
 	struct situation_control_path *ctl, int handle);
 extern int situation_register_data_path(struct situation_data_path *data,
 	int handle);
-extern int sar_data_report(int32_t value[3]);
-extern int sar_data_report_t(int32_t value[3], int64_t time_stamp);
+extern int sar_data_report(int32_t value[6]);
+extern int sar_data_report_t(int32_t value[6], int64_t time_stamp);
+extern int sar_secondary_data_report(int32_t value[6]);
+extern int sar_secondary_data_report_t(int32_t value[6], int64_t time_stamp);
+extern int smartprox_data_report(int32_t value[3]);
+extern int smartprox_data_report_t(int32_t value[3], int64_t time_stamp);
 #endif

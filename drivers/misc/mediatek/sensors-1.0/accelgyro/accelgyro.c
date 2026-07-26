@@ -654,6 +654,33 @@ static ssize_t acc_store_cali(struct device *dev, struct device_attribute *attr,
 	return count;
 }
 
+static ssize_t accversion_show(struct device *dev,
+				 struct device_attribute *attr, char *buf)
+{
+	int version = -1;
+	struct acc_context *cxt = NULL;
+	cxt  = acc_context_obj;
+	if (!cxt || !cxt->acc_ctl.acc_getversion) {
+		return snprintf(buf, sizeof(int), "%d\n", 0);
+	}
+	version = cxt->acc_ctl.acc_getversion();
+	pr_err("acc get version:%d\n", version);
+	return snprintf(buf, sizeof(int), "%d\n", version);
+}
+
+static ssize_t gyroversion_show(struct device *dev,
+				 struct device_attribute *attr, char *buf)
+{
+	int version = -1;
+	struct gyro_context *cxt = NULL;
+	cxt  = gyro_context_obj;
+	if (!cxt || !cxt->gyro_ctl.gyro_getversion) {
+		return snprintf(buf, sizeof(int), "%d\n", 0);
+	}
+	version = cxt->gyro_ctl.gyro_getversion();
+	pr_err("gyro get version:%d\n", version);
+	return snprintf(buf, sizeof(int), "%d\n", version);
+}
 static int gyro_enable_and_batch(void)
 {
 	struct gyro_context *cxt = gyro_context_obj;
@@ -1100,6 +1127,7 @@ DEVICE_ATTR(accbatch, 0644, acc_show_batch, acc_store_batch);
 DEVICE_ATTR(accflush, 0644, acc_show_flush, acc_store_flush);
 DEVICE_ATTR(acccali, 0644, acc_show_cali, acc_store_cali);
 DEVICE_ATTR(accdevnum, 0644, acc_show_sensordevnum, NULL);
+DEVICE_ATTR(accversion, 0644, accversion_show, NULL);
 
 static struct attribute *acc_attributes[] = {
 	&dev_attr_accenablenodata.attr,
@@ -1108,6 +1136,7 @@ static struct attribute *acc_attributes[] = {
 	&dev_attr_accflush.attr,
 	&dev_attr_acccali.attr,
 	&dev_attr_accdevnum.attr,
+	&dev_attr_accversion.attr,
 	NULL
 };
 
@@ -1264,6 +1293,7 @@ DEVICE_ATTR(gyrobatch, 0644, gyro_show_batch, gyro_store_batch);
 DEVICE_ATTR(gyroflush, 0644, gyro_show_flush, gyro_store_flush);
 DEVICE_ATTR(gyrocali, 0644, gyro_show_cali, gyro_store_cali);
 DEVICE_ATTR(gyrodevnum, 0644, gyro_show_devnum, NULL);
+DEVICE_ATTR(gyroversion, 0644, gyroversion_show, NULL);
 
 static struct attribute *gyro_attributes[] = {
 	&dev_attr_gyroenablenodata.attr,
@@ -1272,6 +1302,7 @@ static struct attribute *gyro_attributes[] = {
 	&dev_attr_gyroflush.attr,
 	&dev_attr_gyrocali.attr,
 	&dev_attr_gyrodevnum.attr,
+	&dev_attr_gyroversion.attr,
 	NULL
 };
 

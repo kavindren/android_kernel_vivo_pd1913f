@@ -46,10 +46,28 @@ struct sensor_state {
 	bool temp;
 	bool test;
 	bool raw;
+	bool data;  /* for DATA_ACTION */
 	int64_t delay;
 	int64_t latency;
 	atomic_t flush;
 	atomic64_t start_time;
+};
+
+struct sensor_info {
+	uint8_t sensor_type;
+	uint32_t gain;
+	uint32_t version;
+	char name[16];
+	char vendor[16];
+};
+
+struct custom_cmd {
+	int data[16];
+};
+
+enum custom_action {
+	CUST_CMD_CALI = 0,
+	/*Add custom cmd action here!*/
 };
 
 struct hf_core {
@@ -59,9 +77,6 @@ struct hf_core {
 
 	spinlock_t client_lock;
 	struct list_head client_list;
-
-	struct mutex device_lock;
-	struct list_head device_list;
 
 	struct kthread_worker kworker;
 };
@@ -74,25 +89,20 @@ struct hf_device {
 	int (*flush)(struct hf_device *hfdev, int sensor_type);
 	int (*calibration)(struct hf_device *hfdev, int sensor_type);
 	int (*config_cali)(struct hf_device *hfdev,
-		int sensor_type, void *data, uint8_t length);
+		int sensor_type, int32_t *data);
 	int (*selftest)(struct hf_device *hfdev, int sensor_type);
 	int (*rawdata)(struct hf_device *hfdev, int sensor_type, int en);
-	int (*debug)(struct hf_device *hfdev, int sensor_type,
-		uint8_t *buffer, unsigned int len);
 	int (*custom_cmd)(struct hf_device *hfdev, int sensor_type,
 		struct custom_cmd *cust_cmd);
 
+	char *dev_name;
 	unsigned char device_poll;
 	unsigned char device_bus;
+
 	struct sensor_info *support_list;
 	unsigned int support_size;
 
-	char *dev_name;
-
 	struct hf_manager *manager;
-	struct list_head list;
-	bool ready;
-
 	void *private_data;
 };
 
@@ -155,12 +165,8 @@ static inline void *hf_device_get_private_data(struct hf_device *device)
 	return device->private_data;
 }
 
-int hf_device_register(struct hf_device *device);
-void hf_device_unregister(struct hf_device *device);
 int hf_manager_create(struct hf_device *device);
-void hf_manager_destroy(struct hf_manager *manager);
-int hf_device_register_manager_create(struct hf_device *device);
-void hf_device_unregister_manager_destroy(struct hf_device *device);
+int hf_manager_destroy(struct hf_manager *manager);
 void coordinate_map(unsigned char direction, int32_t *data);
 struct hf_client *hf_client_create(void);
 void hf_client_destroy(struct hf_client *client);

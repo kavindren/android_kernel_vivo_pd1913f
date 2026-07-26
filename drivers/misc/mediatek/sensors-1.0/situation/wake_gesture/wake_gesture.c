@@ -145,6 +145,6 @@ static void __exit wakehub_exit(void)
 module_init(wakehub_init);
 module_exit(wakehub_exit);
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("GLANCE_GESTURE_HUB driver");
+MODULE_DESCRIPTION("wakehub motion driver");
 MODULE_AUTHOR("hongxu.zhao@mediatek.com");
 

@@ -19,6 +19,7 @@
 #include "cust_acc.h"
 #include "accel.h"
 
+#include <linux/vsen_common.h>
 struct accel_factory_fops {
 	int (*enable_sensor)(bool enable_disable, int64_t sample_periods_ms);
 	int (*get_data)(int32_t data[3], int *status);
@@ -28,6 +29,7 @@ struct accel_factory_fops {
 	int (*set_cali)(int32_t offset[3]);
 	int (*get_cali)(int32_t offset[3]);
 	int (*do_self_test)(void);
+	int (*do_vsen_commands)(uint8_t sensorType, int32_t *args, int args_len);
 };
 
 struct accel_factory_public {

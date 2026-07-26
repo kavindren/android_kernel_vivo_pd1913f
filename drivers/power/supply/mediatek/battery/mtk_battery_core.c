@@ -1065,17 +1065,22 @@ void fg_custom_init_from_header(void)
 
 #ifdef CONFIG_OF
 static int fg_read_dts_val(const struct device_node *np,
-		const char *node_srting,
-		int *param, int unit)
+						   const char *node_srting,
+						   int *param, int unit)
 {
 	static unsigned int val;
 
+	if (!np) {
+		bm_err("%s: np is NULL! Cannot search for %s\n", __func__, node_srting);
+		return -1;
+	}
+
 	if (!of_property_read_u32(np, node_srting, &val)) {
 		*param = (int)val * unit;
-		bm_debug("Get %s: %d\n",
-			 node_srting, *param);
+		bm_debug("[%pOF] Get %s: %d\n",
+				 np, node_srting, *param);
 	} else {
-		bm_err("Get %s failed\n", node_srting);
+		bm_err("[%pOF] Get %s failed\n", np, node_srting);
 		return -1;
 	}
 	return 0;

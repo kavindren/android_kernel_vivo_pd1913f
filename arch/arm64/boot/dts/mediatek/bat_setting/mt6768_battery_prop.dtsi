@@ -10,8 +10,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
  * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
  */
-bat_gm30: battery{
-	compatible = "mediatek,bat_gm30";
+&battery {
+	compatible = "vivo,battery", "mediatek,bat_gm30";
 	DIFFERENCE_FULLOCV_ITH = <(200)>;
 /*	Charging termination current*/
 	SHUTDOWN_1_TIME = <(30)>;
@@ -74,5 +74,4 @@ bat_gm30: battery{
 /* Table numbers per battery*/
 	MULTI_TEMP_GAUGE0 = <(1)>;
 /* Multi gauge0 enable*/
-#include "mt6768_battery_table.dtsi"
 };

@@ -43,7 +43,7 @@
 #define GETARRAYNUM(array) (ARRAY_SIZE(array))
 
 /*bq25601 REG06 VREG[5:0]*/
-const unsigned int VBAT_CV_VTH[] = {
+static const unsigned int VBAT_CV_VTH[] = {
 	3856000, 3888000, 3920000, 3952000,
 	3984000, 4016000, 4048000, 4080000,
 	4112000, 4144000, 4176000, 4208000,
@@ -55,7 +55,7 @@ const unsigned int VBAT_CV_VTH[] = {
 };
 
 /*BQ25601 REG04 ICHG[6:0]*/
-const unsigned int CS_VTH[] = {
+static const unsigned int CS_VTH[] = {
 	0, 6000, 12000, 18000, 24000,
 	30000, 36000, 42000, 48000, 54000,
 	60000, 66000, 72000, 78000, 84000,
@@ -67,7 +67,7 @@ const unsigned int CS_VTH[] = {
 };
 
 /*BQ25601 REG00 IINLIM[5:0]*/
-const unsigned int INPUT_CS_VTH[] = {
+static const unsigned int INPUT_CS_VTH[] = {
 	10000, 20000, 30000, 40000,
 	50000, 60000, 70000, 80000,
 	90000, 100000, 110000, 120000,
@@ -79,7 +79,7 @@ const unsigned int INPUT_CS_VTH[] = {
 };
 
 
-const unsigned int VCDT_HV_VTH[] = {
+static const unsigned int VCDT_HV_VTH[] = {
 	4200000, 4250000, 4300000, 4350000,
 	4400000, 4450000, 4500000, 4550000,
 	4600000, 6000000, 6500000, 7000000,
@@ -88,7 +88,7 @@ const unsigned int VCDT_HV_VTH[] = {
 };
 
 
-const unsigned int VINDPM_REG[] = {
+static const unsigned int VINDPM_REG[] = {
 	3900, 4000, 4100, 4200, 4300, 4400,
 	4500, 4600, 4700, 4800, 4900, 5000,
 	5100, 5200, 5300, 5400, 5500, 5600,
@@ -97,7 +97,7 @@ const unsigned int VINDPM_REG[] = {
 };
 
 /* BQ25601 REG0A BOOST_LIM[2:0], mA */
-const unsigned int BOOST_CURRENT_LIMIT[] = {
+static const unsigned int BOOST_CURRENT_LIMIT[] = {
 	500, 1200
 };
 
@@ -111,14 +111,14 @@ struct bq25601_info {
 	int irq;
 };
 
-DEFINE_MUTEX(g_input_current_mutex);
+static DEFINE_MUTEX(g_input_current_mutex);
 static struct i2c_client *new_client;
-static const struct i2c_device_id bq25601_i2c_id[] = { {"bq25601", 0}, {} };
+static const struct i2c_device_id bq25601_i2c_id[] = { {"bq25601", 0}, {"bq25601d", 0}, {} };
 
 static int bq25601_driver_probe(struct i2c_client *client,
 				const struct i2c_device_id *id);
 
-unsigned int charging_value_to_parameter(const unsigned int
+static unsigned int charging_value_to_parameter(const unsigned int
 		*parameter, const unsigned int array_size,
 		const unsigned int val)
 {
@@ -130,7 +130,7 @@ unsigned int charging_value_to_parameter(const unsigned int
 
 }
 
-unsigned int charging_parameter_to_value(const unsigned int
+static unsigned int charging_parameter_to_value(const unsigned int
 		*parameter, const unsigned int array_size,
 		const unsigned int val)
 {
@@ -1190,7 +1190,7 @@ static int bq25601_parse_dt(struct bq25601_info *info,
 
 	if (of_property_read_string(np, "charger_name",
 				    &info->chg_dev_name) < 0) {
-		info->chg_dev_name = "primary_chg";
+		info->chg_dev_name = "secondary_chg"; // keep the BQ25890h as primary
 		pr_info("%s: no charger name\n", __func__);
 	}
 

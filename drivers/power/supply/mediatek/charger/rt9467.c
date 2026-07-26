@@ -3681,7 +3681,7 @@ static int rt9467_probe(struct i2c_client *client,
 #endif /* CONFIG_TCPC_CLASS */
 
 	/* Is HW exist */
-	if (!rt9467_is_hw_exist(info)) {
+	if (rt9467_is_hw_exist(info)) {
 		dev_notice(info->dev, "%s: no rt9467 exists\n", __func__);
 		ret = -ENODEV;
 		goto err_no_dev;

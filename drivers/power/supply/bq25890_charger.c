@@ -28,6 +28,9 @@
 #include <linux/acpi.h>
 #include <linux/of.h>
 
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
+
 #define BQ25890_MANUFACTURER		"Texas Instruments"
 #define BQ25890_IRQ_PIN			"bq25890_irq"
 
@@ -721,15 +724,19 @@ static int bq25890_usb_notifier(struct notifier_block *nb, unsigned long val,
 
 static int bq25890_irq_probe(struct bq25890_device *bq)
 {
-	struct gpio_desc *irq;
+	int gpio, irq;
 
-	irq = devm_gpiod_get(bq->dev, BQ25890_IRQ_PIN, GPIOD_IN);
-	if (IS_ERR(irq)) {
-		dev_err(bq->dev, "Could not probe irq pin.\n");
-		return PTR_ERR(irq);
+	gpio = of_get_named_gpio(bq->dev->of_node, "vivo,int-gpio", 0);
+	if (gpio < 0) {
+		return dev_err_probe(bq->dev, gpio, "Failed to get vivo,int-gpio from DT\n");
 	}
 
-	return gpiod_to_irq(irq);
+	irq = gpio_to_irq(gpio);
+	if (irq < 0) {
+		return dev_err_probe(bq->dev, irq, "Failed to convert GPIO %d to IRQ\n", gpio);
+	}
+
+	return irq;
 }
 
 static int bq25890_fw_read_u32_props(struct bq25890_device *bq)
@@ -738,40 +745,38 @@ static int bq25890_fw_read_u32_props(struct bq25890_device *bq)
 	u32 property;
 	int i;
 	struct bq25890_init_data *init = &bq->init_data;
+
+	/* Set safe hardware defaults first */
+	init->ichg = bq25890_find_idx(2048000, TBL_ICHG);       /* 2048 mA default */
+	init->vreg = bq25890_find_idx(4208000, TBL_VREG);       /* 4.208 V default */
+	init->iterm = bq25890_find_idx(256000, TBL_ITERM);      /* 256 mA default  */
+	init->iprechg = bq25890_find_idx(128000, TBL_ITERM);    /* 128 mA default  */
+	init->sysvmin = bq25890_find_idx(3500000, TBL_SYSVMIN); /* 3.5 V default   */
+	init->boostv = bq25890_find_idx(5000000, TBL_BOOSTV);   /* 5.0 V default   */
+	init->boosti = bq25890_find_idx(1500000, TBL_BOOSTI);   /* 1.5 A default   */
+	init->treg = 3;                                         /* 120 C default   */
+
 	struct {
 		char *name;
-		bool optional;
 		enum bq25890_table_ids tbl_id;
-		u8 *conv_data; /* holds converted value from given property */
+		u8 *conv_data;
 	} props[] = {
-		/* required properties */
-		{"ti,charge-current", false, TBL_ICHG, &init->ichg},
-		{"ti,battery-regulation-voltage", false, TBL_VREG, &init->vreg},
-		{"ti,termination-current", false, TBL_ITERM, &init->iterm},
-		{"ti,precharge-current", false, TBL_ITERM, &init->iprechg},
-		{"ti,minimum-sys-voltage", false, TBL_SYSVMIN, &init->sysvmin},
-		{"ti,boost-voltage", false, TBL_BOOSTV, &init->boostv},
-		{"ti,boost-max-current", false, TBL_BOOSTI, &init->boosti},
-
-		/* optional properties */
-		{"ti,thermal-regulation-threshold", true, TBL_TREG, &init->treg}
+		{"ti,charge-current", TBL_ICHG, &init->ichg},
+		{"ti,battery-regulation-voltage", TBL_VREG, &init->vreg},
+		{"ti,termination-current", TBL_ITERM, &init->iterm},
+		{"ti,precharge-current", TBL_ITERM, &init->iprechg},
+		{"ti,minimum-sys-voltage", TBL_SYSVMIN, &init->sysvmin},
+		{"ti,boost-voltage", TBL_BOOSTV, &init->boostv},
+		{"ti,boost-max-current", TBL_BOOSTI, &init->boosti},
+		{"ti,thermal-regulation-threshold", TBL_TREG, &init->treg}
 	};
 
-	/* initialize data for optional properties */
-	init->treg = 3; /* 120 degrees Celsius */
-
 	for (i = 0; i < ARRAY_SIZE(props); i++) {
-		ret = device_property_read_u32(bq->dev, props[i].name,
-					       &property);
-		if (ret < 0) {
-			if (props[i].optional)
-				continue;
-
-			return ret;
+		ret = device_property_read_u32(bq->dev, props[i].name, &property);
+		if (ret == 0) {
+			/* Only run conversion if property was actually read successfully */
+			*props[i].conv_data = bq25890_find_idx(property, props[i].tbl_id);
 		}
-
-		*props[i].conv_data = bq25890_find_idx(property,
-						       props[i].tbl_id);
 	}
 
 	return 0;
@@ -960,12 +965,14 @@ static const struct dev_pm_ops bq25890_pm = {
 
 static const struct i2c_device_id bq25890_i2c_ids[] = {
 	{ "bq25890", 0 },
+	{ "bq25890h", 0 },
 	{},
 };
 MODULE_DEVICE_TABLE(i2c, bq25890_i2c_ids);
 
 static const struct of_device_id bq25890_of_match[] = {
 	{ .compatible = "ti,bq25890", },
+	{ .compatible = "ti,bq25890h", },
 	{ },
 };
 MODULE_DEVICE_TABLE(of, bq25890_of_match);

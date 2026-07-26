@@ -277,13 +277,13 @@ bool is_recovery_mode(void)
 		return false;
 
 	bm_debug("mtk_battery boot mode =%d\n", boot_mode);
-	if (boot_mode == RECOVERY_BOOT) {
+	/* if (boot_mode == RECOVERY_BOOT) {
 		gm.log_level = BMLOG_DEBUG_LEVEL;
 		fg_cust_data.daemon_log_level = BMLOG_DEBUG_LEVEL;
 		return true;
-	}
+	} */
 
-	return false;
+	return true;
 }
 
 bool is_fg_disabled(void)
@@ -4613,6 +4613,7 @@ static int battery_resume(struct platform_device *dev)
 
 #ifdef CONFIG_OF
 static const struct of_device_id mtk_bat_of_match[] = {
+	{.compatible = "vivo,battery",},
 	{.compatible = "mediatek,bat_gm30",},
 	{},
 };

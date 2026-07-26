@@ -1501,11 +1501,11 @@ defined(CONFIG_MTK_CAM_SECURITY_SUPPORT)
 	nxp_sn100: nxp_sn100 {
 		compatible = "mediatek,nxp-sn100";
 	};
-#ifndef CONFIG_VIVO_CHARGING_NEW_ARCH
-#if (CONFIG_MTK_GAUGE_VERSION == 30)
+//#ifndef CONFIG_VIVO_CHARGING_NEW_ARCH
+//#if (CONFIG_MTK_GAUGE_VERSION == 30)
 	//#include "mediatek/bat_setting/mt6768_battery_prop.dtsi"
-#endif
-#endif
+//#endif
+//#endif
 	md_ccif3@1023f000 {
 		compatible = "mediatek,md_ccif3";
 		reg = <0 0x1023f000 0 0x1000>;
@@ -2094,6 +2094,28 @@ defined(CONFIG_MTK_CAM_SECURITY_SUPPORT)
 		pu_cfg = <0x60>;
 		rsel_cfg = <0x90>;
 		aed = <0x1a>;
+
+		stm32l011@50 {
+			compatible = "st,st32l011-mcu";
+			reg = <0x50>;
+
+			bq25890h@6a {
+				compatible = "ti,bq25890h";
+				reg = <0x6a>;
+				vivo,int-gpio = <&pio 0x03 0x00>;
+				charger_name = "primary_chg";
+				alias_name = "bq25890";
+			};
+
+			bq25601d@6b {
+				compatible = "ti,bq25601d";
+				reg = <0x6b>;
+				vivo,int-gpio = <&pio 0x14 0x00>;
+				vivo,enable-gpio = <&pio 0xa6 0x00>;
+				charger_name = "secondary_chg";
+				alias_name = "bq25601";
+			};
+		};
 	};
 
 	i2c8: i2c8@11005000 {
@@ -3610,8 +3632,70 @@ defined(CONFIG_MTK_CAM_SECURITY_SUPPORT)
 	};
 
 	battery: battery {
-		compatible = "vivo,battery";
+		compatible = "vivo,battery", "mediatek,bat_gm30";
+
+		DIFFERENCE_FULLOCV_ITH = <(200)>;
+		SHUTDOWN_1_TIME = <(30)>;
+		KEEP_100_PERCENT = <(1)>;
+		R_FG_VALUE = <(5)>;
+		EMBEDDED_SEL = <(0)>;
+		PMIC_SHUTDOWN_CURRENT = <(20)>;
+		FG_METER_RESISTANCE = <(100)>;
+		CAR_TUNE_VALUE = <(100)>;
+		PMIC_MIN_VOL = <(33500)>;
+		POWERON_SYSTEM_IBOOT = <(500)>;
+		SHUTDOWN_GAUGE0_VOLTAGE = <(34000)>;
+		SHUTDOWN_GAUGE0 = <(0)>;
+		SHUTDOWN_SYSTEM_IBOOT = <(500)>;
+		MULTI_BATTERY = <0>;
+
+		TEMPERATURE_T0 = <(50)>;
+		TEMPERATURE_TB0 = <(50)>;
+		TEMPERATURE_T1 = <(25)>;
+		TEMPERATURE_TB1 = <(25)>;
+		TEMPERATURE_T2 = <(10)>;
+		TEMPERATURE_TB2 = <(10)>;
+		TEMPERATURE_T3 = <(0)>;
+		TEMPERATURE_TB3 = <(0)>;
+		TEMPERATURE_T4 = <(-6)>;
+		TEMPERATURE_TB4 = <(-6)>;
+		TEMPERATURE_T5 = <(-10)>;
+		TEMPERATURE_TB5 = <(-10)>;
+
+		q_max_mah = <(4500)>;
+		Q_MAX_POS_50 = <(4500)>;
+		Q_MAX_POS_25 = <(4500)>;
+		Q_MAX_POS_0 = <(4200)>;
+		Q_MAX_NEG_10 = <(3800)>;
+		Q_MAX_L_CURRENT = <(200)>;
+		Q_MAX_H_CURRENT = <(2000)>;
+
+		PSEUDO1_EN = <(1)>;
+		PSEUDO100_EN = <(1)>;
+		PSEUDO100_EN_DIS = <(1)>;
+		g_FG_PSEUDO100_T0 = <(100)>;
+		g_FG_PSEUDO100_T1 = <(100)>;
+		g_FG_PSEUDO100_T2 = <(100)>;
+		g_FG_PSEUDO100_T3 = <(100)>;
+		g_FG_PSEUDO100_T4 = <(100)>;
+		Q_MAX_SYS_VOLTAGE_BAT0 = <(3350)>;
+		Q_MAX_SYS_VOLTAGE_BAT1 = <(3350)>;
+		Q_MAX_SYS_VOLTAGE_BAT2 = <(3350)>;
+		Q_MAX_SYS_VOLTAGE_BAT3 = <(3350)>;
+
+		RBAT_TYPE = <(0)>;
+		NO_BAT_TEMP_COMPENSATE = <(0)>;
+		COM_FG_METER_RESISTANCE = <(100)>;
+		COM_R_FG_VALUE = <(0)>;
+		enable_tmp_intr_suspend = <(0)>;
+
+		ACTIVE_TABLE = <(6)>;
+		MULTI_TEMP_GAUGE0 = <(1)>;
+
+		#include "mediatek/bat_setting/pd1913f_battery_table.dtsi"
 	};
+
+	// #include "mediatek/bat_setting/pd1913f_battery_gauge_fix.dtsi"
 
 	charge: charge {
 		compatible = "vivo,charge";

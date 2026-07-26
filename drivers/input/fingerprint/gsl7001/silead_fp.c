@@ -32,7 +32,6 @@
  * Rui Wu     2019/10/10  0.3.1      fix crash when remove class node
  *
  */
-#define pr_fmt(fmt)		"[FP_KERN] " KBUILD_MODNAME ": " fmt
 
 #include <linux/init.h>
 #include <linux/module.h>
@@ -62,7 +61,6 @@
 #include <net/sock.h>
 #include <linux/spi/spi.h>
 #include <linux/spi/spidev.h>
-
 
 #include <linux/uaccess.h>
 
@@ -108,7 +106,7 @@ struct silfp_data {
 	dev_t			devt;
 	struct cdev cdev;
 	spinlock_t  spi_lock;
-	struct platform_device *spi;
+	struct spi_device	*spi;
 	struct list_head  device_entry;
 
 	unsigned		users;
@@ -212,12 +210,12 @@ typedef struct _key_map {
 
 static nav_keymap_t keymap[] = {
 	{ NAV_KEY_UP,       KEY_UP,         }, /* KEY_RESERVED, ignore this key */
-	{ NAV_KEY_DOWN,     KEY_DOWN,       },
-	{ NAV_KEY_RIGHT,    KEY_RIGHT,      },
-	{ NAV_KEY_LEFT,     KEY_LEFT,       },
-	{ NAV_KEY_CLICK,    KEY_HOMEPAGE,   },
-	{ NAV_KEY_DCLICK,   KEY_HOMEPAGE,   },
-	{ NAV_KEY_LONGPRESS, KEY_HOMEPAGE,   },
+	{ NAV_KEY_DOWN,     KEY_DOWN,       }, 
+	{ NAV_KEY_RIGHT,    KEY_RIGHT,      }, 
+	{ NAV_KEY_LEFT,     KEY_LEFT,       }, 
+	{ NAV_KEY_CLICK,    KEY_HOMEPAGE,   }, 
+	{ NAV_KEY_DCLICK,   KEY_HOMEPAGE,   }, 
+	{ NAV_KEY_LONGPRESS, KEY_HOMEPAGE,   }, 
 };
 
 static LIST_HEAD(device_list);
@@ -900,7 +898,6 @@ static int silfp_resource_deinit(struct silfp_data *fp_dev)
 
 			silfp_input_deinit(fp_dev);
 			silfp_power_deinit(fp_dev);
-			silfp_pinctrl_deinit(fp_dev);
 #ifdef PROC_NODE
 			silfp_proc_deinit(fp_dev);
 #endif /* PROC_NODE */
@@ -1287,7 +1284,7 @@ static const struct file_operations silfp_dev_fops = {
 
 /*-------------------------------------------------------------------------*/
 
-static int silfp_probe(struct platform_device *spi)
+static int silfp_probe(struct spi_device *spi)
 {
 	struct silfp_data	*fp_dev;
 	int			status = 0;
@@ -1356,7 +1353,7 @@ static int silfp_probe(struct platform_device *spi)
 #ifdef PROC_NODE
 	silfp_proc_init(fp_dev);
 #endif /* PROC_NODE */
-	platform_set_drvdata(spi, fp_dev);
+	spi_set_drvdata(spi, fp_dev);
 
 	return status;
 
@@ -1370,7 +1367,7 @@ err_dev:
 	unregister_chrdev_region(fp_dev->devt, 1);
 
 err_devt:
-	platform_set_drvdata(spi, NULL);
+	spi_set_drvdata(spi, NULL);
 	fp_dev->spi = NULL;
 	kfree(fp_dev);
 	fp_dev = NULL;
@@ -1378,9 +1375,9 @@ err_devt:
 	return status;
 }
 
-static int silfp_remove(struct platform_device *spi)
+static int silfp_remove(struct spi_device *spi)
 {
-	struct silfp_data	*fp_dev = platform_get_drvdata(spi);
+	struct silfp_data	*fp_dev = spi_get_drvdata(spi);
 
 	wake_lock_destroy(&fp_dev->wakelock);
 	wake_lock_destroy(&fp_dev->wakelock_hal);
@@ -1414,14 +1411,14 @@ static int silfp_remove(struct platform_device *spi)
 }
 
 static const struct of_device_id sildev_dt_ids[] = {
-	{ .compatible = "mediatek,silead_fp" },
-	{ .compatible = "mediatek,silead-fp" },
+	{ .compatible = "mediatek,fp_node" }, 
+	{ .compatible = "mediatek,fingerprint" }, 
 	{}, 
 };
 
 MODULE_DEVICE_TABLE(of, sildev_dt_ids);
 
-static struct platform_driver silfp_driver = {
+static struct spi_driver silfp_driver = {
 	.driver = {
 		.name  = "silead_fp_spi", 
 		.owner = THIS_MODULE, 
@@ -1438,6 +1435,9 @@ static struct platform_driver silfp_driver = {
 };
 
 /*-------------------------------------------------------------------------*/
+//vivo duyihang add for puresys_recovery begin
+extern unsigned int os_boot_puresys;
+//vivo duyihang add for puresys_recovery end
 #ifndef BSP_SIL_DYNAMIC_SPI
 static
 #endif
@@ -1450,13 +1450,16 @@ int silfp_dev_init(void)
 		printk("%s:in AT mode, not load gsl7001 driver!\n", __func__);
 		return 0;
 	}
-#if 0
 	if (get_fp_id() != SILEAD_GSL7001) {
 		printk("%s(): wrong gsl7001 id, exit\n", __func__);
 		return 0;
 	}
-#endif
-
+	//vivo duyihang add for puresys_recovery begin
+	if (os_boot_puresys == 1) {
+		printk("%s:boot puresys, not load drm driver!\n", __func__);
+		return 0;
+	}
+	//vivo duyihang add for puresys_recovery end
 #endif
 	LOG_MSG_DEBUG(ERR_LOG, "SILEAD_FP Driver, Version: %s.\n", FP_DEV_VERSION);
 	/* Claim our 256 reserved device numbers.  Then register a class
@@ -1474,7 +1477,7 @@ int silfp_dev_init(void)
 		return PTR_ERR(silfp_class);
 	}
 
-	status = platform_driver_register(&silfp_driver);
+	status = spi_register_driver(&silfp_driver);
 	if (status < 0) {
 		class_destroy(silfp_class);
 		unregister_chrdev(FP_DEV_MAJOR, silfp_driver.driver.name);
@@ -1490,7 +1493,7 @@ static
 #endif
 void silfp_dev_exit(void)
 {
-	platform_driver_unregister(&silfp_driver);
+	spi_unregister_driver(&silfp_driver);
 	class_destroy(silfp_class);
 	unregister_chrdev(FP_DEV_MAJOR, silfp_driver.driver.name);
 }

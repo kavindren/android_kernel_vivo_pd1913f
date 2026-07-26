@@ -13,7 +13,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
- #define pr_fmt(fmt)		"[FP_KERN] " KBUILD_MODNAME ": " fmt
 
 #include <linux/slab.h>
 #include <linux/device.h>
@@ -22,7 +21,7 @@
 #include <linux/io.h>
 #include <linux/gpio.h>
 #include <linux/fb.h>
-#include <linux/pm_wakeup.h>
+#include <linux/wakelock.h>
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
 #else
@@ -55,13 +54,12 @@
 #include "mtk_spi_hal.h"
 #endif
 /*#include "mtk_gpio.h"*/
-#include <linux/of_gpio.h>
 #include "upmu_common.h"
 #include "gf3208_spi_tee.h"
 #include <linux/cpu.h>
 #include <linux/spinlock.h>
 #include <linux/workqueue.h>
-//#include <linux/vivo_touchscreen_virtual_key.h>
+#include <linux/vivo_touchscreen_virtual_key.h>
 #include <linux/time.h>
 #include <linux/workqueue.h>
 #include <linux/regulator/consumer.h>
@@ -88,7 +86,7 @@
 
 #define GF_LINUX_VERSION "V1.01.04"
 
-#define GF_NETLINK_ROUTE 25   /* for GF test temporary, need defined in include/uapi/linux/netlink.h */
+#define GF_NETLINK_ROUTE 29   /* for GF test temporary, need defined in include/uapi/linux/netlink.h */
 #define MAX_NL_MSG_LEN 16
 #define GF_INPUT_FF_KEY  KEY_FINGERPRINT_WAKE
 #define GF_INPUT_SCREENSHOT_KEY  KEY_FINGERPRINT_SCREENSHOT
@@ -124,7 +122,7 @@ static int ff_mode_state;
 static int current_mode;
 static int reset_irq_flag;
 static spinlock_t lock_reset_irq;
-static struct wakeup_source gf_wakelock;
+static struct wake_lock gf_wakelock;
 
 static unsigned int bufsiz = (15 * 1024);
 module_param(bufsiz, uint, S_IRUGO);
@@ -133,7 +131,7 @@ MODULE_PARM_DESC(bufsiz, "maximum data bytes for SPI message");
 #ifdef CONFIG_OF
 static const struct of_device_id gf_of_match[] = {
 	{ .compatible = "mediatek,fingerprint", },
-	{ .compatible = "mediatek,fp_node", },
+	{ .compatible = "mediatek,goodix-fp", },
 	{ .compatible = "goodix,goodix-fp", },
 	{},
 };
@@ -226,7 +224,7 @@ static int gf_get_gpio_dts_info(struct gf_device *gf_dev)
 
 	gf_debug(DEBUG_LOG, "%s, from dts pinctrl\n", __func__);
 
-	node = of_find_compatible_node(NULL, NULL, "mediatek,fp_node");
+	node = of_find_compatible_node(NULL, NULL, "mediatek,goodix-fp");
 	if (node) {
 		pdev = of_find_device_by_node(node);
 		if (pdev) {
@@ -241,23 +239,6 @@ static int gf_get_gpio_dts_info(struct gf_device *gf_dev)
 		}
 	} else {
 		gf_debug(ERR_LOG, "%s device node is null\n", __func__);
-	}
-
-	gf_dev->vdd_use_gpio = of_property_read_bool(node, "fp,vdd_use_gpio");
-    gf_debug(DEBUG_LOG, "%s vdd_use_gpio %d\n", __func__, gf_dev->vdd_use_gpio);
-    //gf_dev->vdd_use_gpio = true;
-	if (gf_dev->vdd_use_gpio) {
-		gf_debug(DEBUG_LOG, "%s vdd_use_gpio %d\n", __func__, gf_dev->vdd_use_gpio);
-		gf_dev->vdd_en_gpio = of_get_named_gpio(node, "fp,gpio_vdd_en", 0);
-		if (!gpio_is_valid(gf_dev->vdd_en_gpio)) {
-			pr_info("VDD_EN GPIO is invalid.\n");
-			return -ENODEV;
-		}
-		ret = gpio_request(gf_dev->vdd_en_gpio, "goodix_vdd_en");
-		if (ret) {
-			pr_info("Failed to request VDD_EN GPIO. ret = %d,number=%d\n", ret, gf_dev->vdd_en_gpio);
-			return -ENODEV;
-		}
 	}
 
 	gf_dev->pins_irq = pinctrl_lookup_state(gf_dev->pinctrl_gpios, "fingerprint_irq");
@@ -378,34 +359,13 @@ static int gf_get_sensor_dts_info(void)
 static int gf_hw_get_power_state(struct gf_device *gf_dev)
 {
 	static int retval;
-	if (gf_dev->vdd_use_gpio) {
-		retval = gpio_get_value(gf_dev->vdd_en_gpio);
-	} else {
-		retval = regulator_is_enabled(gf_dev->reg);
-	}
+	retval = regulator_is_enabled(gf_dev->reg);
 	return retval;
 }
 static int gf_hw_power_enable(struct gf_device *gf_dev, u8 onoff)
 {
 	/* TODO: LDO configure */
 	static int retval;
-	if (gf_dev->vdd_use_gpio) {
-	    if (!onoff) {
-			pinctrl_select_state(gf_dev->pinctrl_gpios, gf_dev->pins_reset_low);
-	    }
-		retval = gpio_direction_output(gf_dev->vdd_en_gpio, onoff);
-	    if (retval) {
-		pr_warn("gf: power on fail.\n");
-		return -EIO;
-		}
-    /*need set milan a reset pin low 10ms after power on*/
-	if (onoff) {
-		pinctrl_select_state(gf_dev->pinctrl_gpios, gf_dev->pins_reset_low);
-		mdelay(15);
-		pinctrl_select_state(gf_dev->pinctrl_gpios, gf_dev->pins_reset_high);
-	}
-	pr_warn("gf: power success onoff=%d.\n", onoff);
-	} else {
 	if (onoff) {
 		if (regulator_is_enabled(gf_dev->reg)) {
 		pr_warn("gf:%s,power state:on,don't set repeatedly!\n", __func__);
@@ -431,7 +391,6 @@ static int gf_hw_power_enable(struct gf_device *gf_dev, u8 onoff)
 			gf_debug(DEBUG_LOG, "%s, gf:disable vcc_spi!\n", __func__);
 		}
 	}
-	}
     return retval;
 }
 
@@ -444,15 +403,10 @@ static void gf_spi_clk_enable(struct gf_device *gf_dev, u8 bonoff)
 		disable_clock(MT_CG_PERI_SPI0, "spi");
 	}
 #else
-	static int count;
-
-	if (bonoff && (count == 0)) {
+	if (bonoff) {
 		mt_spi_enable_master_clk(gf_dev->spi);
-		count = 1;
-		gf_debug(INFO_LOG, "clock enable");
-	} else if ((count > 0) && (bonoff == 0)) {
+	} else {
 		mt_spi_disable_master_clk(gf_dev->spi);
-		count = 0;
 		gf_debug(INFO_LOG, "clock disable");
 	}
 #endif
@@ -515,7 +469,7 @@ static void gf_irq_gpio_cfg(struct gf_device *gf_dev)
 
 	pinctrl_select_state(gf_dev->pinctrl_gpios, gf_dev->pins_irq);
 
-	node = of_find_compatible_node(NULL, NULL, "mediatek,fp_node");
+	node = of_find_compatible_node(NULL, NULL, "mediatek,goodix-fp");
 	if (node) {
 		gf_dev->irq_num = irq_of_parse_and_map(node, 0);
 		gf_debug(INFO_LOG, "%s, gf_irq = %d\n", __func__, gf_dev->irq_num);
@@ -729,11 +683,11 @@ static int gf_fb_notifier_callback(struct notifier_block *self,
 
 		/*vivo qishuangcheng add for clearing home_key status begin*/
 		home_key_flag = 0;
-		/*input_report_key(gf_dev->input, GF_KEY_INPUT_HOME, 0);
+		input_report_key(gf_dev->input, GF_KEY_INPUT_HOME, 0);
 		input_sync(gf_dev->input);
 
 		input_report_key(gf_dev->input, GF_INPUT_SCREENSHOT_KEY, 0);
-		input_sync(gf_dev->input);*/
+		input_sync(gf_dev->input);
 		/*vivo qishuangcheng add for clearing home_key status end*/
 		break;
 
@@ -897,7 +851,7 @@ static irqreturn_t gf_irq(int irq, void *handle)
 		input_sync(gf_dev->input);
 		input_report_key(gf_dev->input, GF_INPUT_FF_KEY, 0);
 		input_sync(gf_dev->input);
-		__pm_wakeup_event(&gf_wakelock, msecs_to_jiffies(1000));
+		wake_lock_timeout(&gf_wakelock, msecs_to_jiffies(1000));
 		pr_warn("gf,wake_lock 1s\n");
 	}*/
 
@@ -922,7 +876,7 @@ static irqreturn_t gf_irq(int irq, void *handle)
 		schedule_work(&gf_start_work);
 	}
 
-	__pm_wakeup_event(&gf_wakelock, msecs_to_jiffies(1000));
+	wake_lock_timeout(&gf_wakelock, msecs_to_jiffies(1000));
 	pr_warn("gf,wake_lock 1s#\n");
 
 	return IRQ_HANDLED;
@@ -1317,7 +1271,7 @@ static long gf_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	case GF_IOC_WAKE_LOCK:
 		retval = __get_user(delay_ms, (u32 __user *) arg);
 		if (retval == 0) {
-			__pm_wakeup_event(&gf_wakelock, msecs_to_jiffies(delay_ms));
+			wake_lock_timeout(&gf_wakelock, msecs_to_jiffies(delay_ms));
 			pr_warn("gf,wake lock delay %d ms\n", delay_ms);
 		}
 		break;
@@ -1957,8 +1911,6 @@ static int gf_probe(struct spi_device *spi)
 	gf_dev->probe_finish     = 0;
 	gf_dev->system_status    = 0;
 	gf_dev->need_update      = 0;
-	gf_dev->vdd_en_gpio      = -EINVAL;
-	gf_dev->vdd_use_gpio = false;
 
 	/*setup gf configurations.*/
 	gf_debug(INFO_LOG, "%s, Setting gf device configuration==========\n", __func__);
@@ -1996,34 +1948,26 @@ static int gf_probe(struct spi_device *spi)
 	gf_get_sensor_dts_info();
 
 	pinctrl_select_state(gf_dev->pinctrl_gpios, gf_dev->pins_reset_low);
-	pinctrl_select_state(gf_dev->pinctrl_gpios, gf_dev->pins_cs_pulllow);
+
     /*get regulator*/
-	if (!gf_dev->vdd_use_gpio) {
-	    gf_dev->reg = regulator_get(&gf_dev->spi->dev, "vfp");
-		if (IS_ERR(gf_dev->reg)) {
-			status = -EINVAL;
-			gf_debug(ERR_LOG, "%s, get regulator err.\n", __func__);
-			goto err_reg;
-		}
-	    status = regulator_set_voltage(gf_dev->reg, 3000000, 3000000);
-		if (status) {
-			printk(KERN_ERR "gf:error set voltage %d\n", status);
-			goto err_reg;
-		}
-		status = regulator_enable(gf_dev->reg);
-		if (status) {
-			printk(KERN_ERR "gf:error enabling vcc_spi %d\n", status);
-			goto err_reg;
-		}
-	} else {
-		status = gpio_direction_output(gf_dev->vdd_en_gpio, 1);
-		if (status) {
-			pr_warn("gf: power on fail.\n");
-			return -EIO;
-		}
+    gf_dev->reg = regulator_get(&gf_dev->spi->dev, "vfp");
+	if (IS_ERR(gf_dev->reg)) {
+		status = -EINVAL;
+		gf_debug(ERR_LOG, "%s, get regulator err.\n", __func__);
+		goto err_reg;
+	}
+    status = regulator_set_voltage(gf_dev->reg, 3000000, 3000000);
+	if (status) {
+		printk(KERN_ERR "gf:error set voltage %d\n", status);
+		goto err_reg;
+	}
+	status = gf_hw_power_enable(gf_dev, 1);
+	if (status) {
+		printk(KERN_ERR "gf:error set voltage %d\n", status);
+		goto err_reg;
 	}
 	gf_debug(INFO_LOG, "%s, enable end--->.\n", __func__);
-	mdelay(15);
+
 	/*
 		while(i++<6)
 	{
@@ -2185,7 +2129,7 @@ static int gf_probe(struct spi_device *spi)
 	INIT_DELAYED_WORK(&delay_work.work, vivo_home_key_work_handler);*/
 
 	spin_lock_init(&lock_reset_irq);
-	wakeup_source_add(&gf_wakelock);
+	wake_lock_init(&gf_wakelock, WAKE_LOCK_SUSPEND, "gf_wakelock");
 	/*vivo qishuangcheng add end*/
 
 	/* netlink interface init */
@@ -2264,7 +2208,6 @@ static int gf_remove(struct spi_device *spi)
 
 	FUNC_ENTRY();
 
-	wakeup_source_remove(&gf_wakelock);
 	/* make sure ops on existing fds can abort cleanly */
 	if (gf_dev->irq) {
 		free_irq(gf_dev->irq, gf_dev);
@@ -2328,6 +2271,15 @@ static int gf_remove(struct spi_device *spi)
 	return 0;
 }
 
+static void gf_shutdown(struct spi_device *spi)
+{
+	struct gf_device *gf_dev = spi_get_drvdata(spi);
+
+	FUNC_ENTRY();
+	pinctrl_select_state(gf_dev->pinctrl_gpios, gf_dev->pins_cs_pulllow);
+	gf_hw_power_enable(gf_dev, 0);
+	FUNC_EXIT();
+}
 /*-------------------------------------------------------------------------*/
 static struct spi_driver gf_spi_driver = {
 	.driver = {
@@ -2340,6 +2292,7 @@ static struct spi_driver gf_spi_driver = {
 	},
 	.probe = gf_probe,
 	.remove = gf_remove,
+	.shutdown = gf_shutdown,
 };
 
 extern unsigned int is_atboot;
@@ -2356,7 +2309,7 @@ static int __init gf_init(void)
 	}
 #endif
 	if (get_fp_id() != GOODIX_GF3208 && get_fp_id() != GOODIX_GF5288 && get_fp_id() != GOODIX_GF3658 && get_fp_id() != GOODIX_GF3626) {
-		printk("%s(): wrong goodix id, exit\n", __func__);
+		printk("%s(): wrong gf3208 id, exit\n", __func__);
 		return 0;
 	}
 
@@ -2369,7 +2322,6 @@ static int __init gf_init(void)
 	FUNC_EXIT();
 	return status;
 }
-/*module_init(gf_init);*/
 late_initcall(gf_init);
 
 static void __exit gf_exit(void)

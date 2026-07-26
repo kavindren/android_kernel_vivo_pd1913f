@@ -22,7 +22,6 @@
  * Bill Yu    2019/8/10   0.1.5      Fix crash while parse dts fail
  *
  */
-#define pr_fmt(fmt)		"[FP_KERN] " KBUILD_MODNAME ": " fmt
 
 #ifdef BSP_SIL_PLAT_MTK
 
@@ -33,7 +32,6 @@
 #include <linux/of_platform.h>
 #include <linux/pinctrl/consumer.h>
 #include <linux/regulator/consumer.h>
-#include <linux/platform_device.h>
 //#include "nt_smc_call.h"
 #include <linux/gpio.h>
 #include <mt-plat/upmu_common.h>
@@ -66,16 +64,12 @@ struct mt_spi_t {
 #endif				/* !defined(CONFIG_MTK_LEGACY)*/
 };
 
-extern void vfp_spi_clk_enable(uint8_t bonoff);
 extern int mt_spi_enable_master_clk(struct spi_device *spidev);
 extern void mt_spi_disable_master_clk(struct spi_device *spidev);
 #endif /* !CONFIG_SILEAD_FP_PLATFORM */
 
-//#define FP_IRQ_OF  "mediatek,fp_node"
-//#define FP_PINS_OF "mediatek,fp_node"
-#define FP_IRQ_OF  "mediatek,silead-fp"
-#define FP_PINS_OF "mediatek,silead-fp"
-
+#define FP_IRQ_OF  "mediatek,fp_node"
+#define FP_PINS_OF "mediatek,fp_node"
 
 const static uint8_t TANAME[] = { 0x51, 0x1E, 0xAD, 0x0D, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
@@ -457,40 +451,6 @@ static int silfp_set_default_spi_status(struct silfp_data *fp_dev, int enable)
 }
 
 /* -------------------------------------------------------------------- */
-/*                     spi resource release                        */
-/* -------------------------------------------------------------------- */
-static void silfp_pinctrl_deinit(struct silfp_data *fp_dev)
-{
-	LOG_MSG_DEBUG(INFO_LOG, "[%s] enter.\n", __func__);
-	if (fp_dev->pin.pinctrl) {
-		LOG_MSG_DEBUG(INFO_LOG, " %s : devm_pinctrl_put \n", __func__);
-		devm_pinctrl_put(fp_dev->pin.pinctrl);
-		fp_dev->pin.pinctrl = NULL;
-	}
-	fp_dev->pin.pins_miso_spi = NULL;
-	fp_dev->pin.pins_miso_pullhigh = NULL;
-	fp_dev->pin.pins_miso_pulllow = NULL;
-
-	fp_dev->pin.pins_mosi_spi = NULL;
-	fp_dev->pin.pins_mosi_pullhigh = NULL;
-	fp_dev->pin.pins_mosi_pulllow = NULL;
-
-	fp_dev->pin.pins_cs_spi = NULL;
-	fp_dev->pin.pins_cs_pullhigh = NULL;
-	fp_dev->pin.pins_cs_pulllow = NULL;
-
-	fp_dev->pin.pins_clk_spi = NULL;
-	fp_dev->pin.pins_clk_pullhigh = NULL;
-	fp_dev->pin.pins_clk_pulllow = NULL;
-
-	fp_dev->pin.pins_irq = NULL;
-	fp_dev->pin.pins_irq_rst_h = NULL;
-	fp_dev->pin.pins_irq_rst_l = NULL;
-	fp_dev->pin.pins_rst_h = NULL;
-	fp_dev->pin.pins_rst_l = NULL;
-}
-
-/* -------------------------------------------------------------------- */
 /*                      pull down cs-gpio                               */
 /* -------------------------------------------------------------------- */
 static int silfp_pull_down_cs(struct silfp_data *fp_dev, int pull_down)
@@ -507,28 +467,18 @@ static int silfp_pull_down_cs(struct silfp_data *fp_dev, int pull_down)
 
 static int silfp_set_spi(struct silfp_data *fp_dev, bool enable)
 {
-#if 0
 #if (!defined(CONFIG_SILEAD_FP_PLATFORM))
 #if (!defined(CONFIG_MT_SPI_FPGA_ENABLE))
 #if defined(CONFIG_MTK_CLKMGR)
 	if (enable && !atomic_read(&fp_dev->spionoff_count)) {
 		atomic_inc(&fp_dev->spionoff_count);
-		#if defined(USE_SPI_CONFIG)
 		enable_clock(MT_CG_PERI_SPI0, "spi");
-		#else
-		vfp_spi_clk_enable(1);
-		#endif
 	} else if (atomic_read(&fp_dev->spionoff_count)) {
 		atomic_dec(&fp_dev->spionoff_count);
-		#if defined(USE_SPI_CONFIG)
 		disable_clock(MT_CG_PERI_SPI0, "spi");
-		#else
-		vfp_spi_clk_enable(0);
-		#endif
 	}
 	LOG_MSG_DEBUG(DBG_LOG, "[%s] done\n", __func__);
 #else
-#if defined(USE_SPI_CONFIG)
 	int ret = -ENOENT;
 	struct mt_spi_t *ms = NULL;
 	ms = spi_master_get_devdata(fp_dev->spi->master);
@@ -551,16 +501,11 @@ static int silfp_set_spi(struct silfp_data *fp_dev, bool enable)
 		ret = 0;
 	}
 	LOG_MSG_DEBUG(DBG_LOG, "[%s] done(%d).\n", __func__, ret);
-#else
-	vfp_spi_clk_enable(enable);
-#endif
 #endif /* CONFIG_MTK_CLKMGR */
 #endif /* !CONFIG_MT_SPI_FPGA_ENABLE */
 #else
 	return -ENOENT;
 #endif /* !CONFIG_SILEAD_FP_PLATFORM */
-#endif
-	vfp_spi_clk_enable(enable);
 	return 0;
 }
 

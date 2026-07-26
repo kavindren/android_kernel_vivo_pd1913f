@@ -12,13 +12,13 @@ config BBK_FP_ID
 	tristate "detect fingerprint id"
 	help
 	  there is nothing for help!
+config BBK_FP_HBM_INPUT
+	tristate "BBK FP HBM INPUT support"
+	help
+	  Say Y here to enable switch class support.
 
 source "drivers/input/fingerprint/gf9518/Kconfig"
 source "drivers/input/fingerprint/gf3208/Kconfig"
 source "drivers/input/fingerprint/fpc1511/Kconfig"
-source "drivers/input/fingerprint/et713/Kconfig"
 source "drivers/input/fingerprint/gsl7001/Kconfig"
-source "drivers/input/fingerprint/nvt16605/Kconfig"
-source "drivers/input/fingerprint/gf9578/Kconfig"
-source "drivers/input/fingerprint/gf3956/Kconfig"
 endif

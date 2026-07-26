@@ -13,7 +13,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-#define pr_fmt(fmt)		"[FP_KERN] " KBUILD_MODNAME ": " fmt
 
 #include <linux/slab.h>
 #include <linux/device.h>
@@ -82,7 +81,7 @@
 
 #define GF_LINUX_VERSION "V1.01.04"
 
-#define GF_NETLINK_ROUTE 25   /* for GF test temporary, need defined in include/uapi/linux/netlink.h */
+#define GF_NETLINK_ROUTE 29   /* for GF test temporary, need defined in include/uapi/linux/netlink.h */
 #define MAX_NL_MSG_LEN 16
 
 /*************************************************************/
@@ -2140,7 +2139,7 @@ static struct spi_driver gf_spi_driver = {
 
 extern unsigned int is_atboot;
 //vivo duyihang add for puresys_recovery begin
-//extern unsigned int os_boot_puresys;
+// extern unsigned int os_boot_puresys;
 //vivo duyihang add for puresys_recovery end
 static int __init gf_init(void)
 {
@@ -2152,12 +2151,12 @@ static int __init gf_init(void)
 		return 0;
 	}
 	//vivo duyihang add for puresys_recovery begin
-	//if (os_boot_puresys == 1) {
-	//	printk("%s:boot puresys, not load drm driver!\n", __func__);
-	//	return 0;
-	//}
+	// if (os_boot_puresys == 1) {
+	// 	printk("%s:boot puresys, not load drm driver!\n", __func__);
+	// 	return 0;
+	// }
 	//vivo duyihang add for puresys_recovery end
-	if ((get_fp_id() != GOODIX_GF9518) && (get_fp_id() != GOODIX_GF9578)) {
+	if ((get_fp_id() != GOODIX_GF9518) && (get_fp_id() != GOODIX_GF9518N) && (get_fp_id() != GOODIX_GF9578)) {
 		printk("%s(): wrong gf9518 id, exit\n", __func__);
 		return 0;
 	}

@@ -25,7 +25,6 @@
  * modify it under the terms of the GNU General Public License Version 2
  * as published by the Free Software Foundation.
  */
- #define pr_fmt(fmt)		"[FP_KERN] " KBUILD_MODNAME ": " fmt
 
 #include <linux/platform_device.h>
 #include <linux/module.h>
@@ -41,7 +40,7 @@
 #include <linux/spi/spidev.h>
 #include <linux/kernel.h>
 #include <linux/mutex.h>
-#include <linux/pm_wakeup.h>
+#include <linux/wakelock.h>
 #include <linux/regulator/consumer.h>
 #include <linux/clk.h>
 
@@ -67,6 +66,7 @@ static const char * const pctl_names[] = {
     "mosi_spi",
     "cs_spi",
     "clk_spi",
+    "cs_pulllow",
 };
 
 struct fpc_data {
@@ -77,7 +77,7 @@ struct fpc_data {
 	int irq_gpio;
 	int rst_gpio;
 	bool wakeup_enabled;
-	struct wakeup_source ttw_wl;
+	struct wake_lock ttw_wl;
     struct regulator *reg;
 	struct input_dev *idev;
 	char idev_name[32];
@@ -172,12 +172,13 @@ static int fpc_hw_power_enable(struct fpc_data *fpc, bool onoff)
 			dev_err(fpc->dev, "fpc:error enabling vcc_spi %d\n", retval);
 		}
 	} else {
-		select_pin_ctl(fpc, "reset_low");
+        select_pin_ctl(fpc, "reset_low");
 		usleep_range(FPC_RESET_LOW_US, FPC_RESET_LOW_US + 100);
 
 		if (fpc->reg) {
 			if (regulator_is_enabled(fpc->reg)) {
 				regulator_disable(fpc->reg);
+				select_pin_ctl(fpc, "cs_pulllow");
 			}
 			dev_dbg(fpc->dev, "%s, fpc:disable vcc_spi!\n", __func__);
 		}
@@ -200,7 +201,6 @@ static int fpc_hw_get_power_state(struct fpc_data *fpc)
 static int set_clks(struct fpc_data *fpc, bool enable)
 {
 	int rc = 0;
-	printk("set_clks enable=%d\n", enable);
 
 	if (enable) {
 		mt_spi_enable_master_clk(fpc->spidev);
@@ -344,7 +344,7 @@ static ssize_t fpc_keep_awake_set(struct device *dev,
 	struct  fpc_data *fpc = dev_get_drvdata(dev);
 
 	if (*buf == '1') {
-		__pm_wakeup_event(&fpc->ttw_wl, msecs_to_jiffies(1000));
+		wake_lock_timeout(&fpc->ttw_wl, msecs_to_jiffies(1000));
 		dev_info(fpc->dev, "%s\n", __func__);
 	} else {
 		return -EINVAL;
@@ -430,7 +430,7 @@ static irqreturn_t fpc_irq_handler(int irq, void *handle)
 	** since this is interrupt context (other thread...) */
 	smp_rmb();
 	if (fpc->wakeup_enabled) {
-		__pm_wakeup_event(&fpc->ttw_wl, msecs_to_jiffies(FPC_TTW_HOLD_TIME));
+		wake_lock_timeout(&fpc->ttw_wl, msecs_to_jiffies(FPC_TTW_HOLD_TIME));
 	}
 	printk("fpc_irq_handler\n");
 	sysfs_notify(&fpc->dev->kobj, NULL, dev_attr_irq.attr.name);
@@ -452,7 +452,7 @@ static int mtk6797_probe(struct spi_device *spidev)
 	u32 val;
 
 	dev_dbg(dev, "%s\n", __func__);
-	spidev->dev.of_node = of_find_compatible_node(NULL, NULL, "mediatek,fp_node");
+	spidev->dev.of_node = of_find_compatible_node(NULL, NULL, "mediatek,goodix-fp");
 	if (!spidev->dev.of_node) {
 		dev_err(dev, "no of node found\n");
 		rc = -EINVAL;
@@ -505,19 +505,28 @@ static int mtk6797_probe(struct spi_device *spidev)
 		dev_err(fpc->dev, "%s, get regulator err.\n", __func__);
 		goto exit;
 	}
-	regulator_set_voltage(fpc->reg, 1800000, 1800000);
-	fpc_hw_power_enable(fpc, true);
+	rc = regulator_set_voltage(fpc->reg, 1800000, 1800000);
+	if (rc) {
+		dev_err(dev, "failed to set voltage\n");
+		goto exit;
+	}
+	rc = fpc_hw_power_enable(fpc, true);
+	if (rc) {
+		dev_err(dev, "failed to enable power\n");
+		goto exit;
+	}
+
 	dev_dbg(dev, "%s, enable end--->.\n", __func__);
 
 	dev_dbg(dev, "Using GPIO#%d as IRQ.\n", fpc->irq_gpio);
 	dev_dbg(dev, "Using GPIO#%d as RST.\n", fpc->rst_gpio);
 
-	select_pin_ctl(fpc, "fingerprint_irq");
-	select_pin_ctl(fpc, "clk_spi");
-	select_pin_ctl(fpc, "miso_spi");
-	select_pin_ctl(fpc, "mosi_spi");
-	select_pin_ctl(fpc, "cs_spi");
-	/*node_eint = of_find_compatible_node(NULL, NULL, "mediatek,fpc-fp");*/
+    select_pin_ctl(fpc, "fingerprint_irq");
+    select_pin_ctl(fpc, "clk_spi");
+    select_pin_ctl(fpc, "miso_spi");
+    select_pin_ctl(fpc, "mosi_spi");
+    select_pin_ctl(fpc, "cs_spi");
+    /*node_eint = of_find_compatible_node(NULL, NULL, "mediatek,fpc-fp");*/
 	if (dev->of_node) {
 		irq_num = irq_of_parse_and_map(dev->of_node, 0);
 		dev_dbg(fpc->dev, "%s, irq_num = %d\n", __func__, irq_num);
@@ -579,7 +588,7 @@ static int mtk6797_probe(struct spi_device *spidev)
 
 	/* Request that the interrupt should be wakeable */
 	enable_irq_wake(irq_num);
-	wakeup_source_add(&fpc->ttw_wl);
+	wake_lock_init(&fpc->ttw_wl, WAKE_LOCK_SUSPEND, "fpc_ttw_wl");
 
 	rc = sysfs_create_group(&dev->kobj, &fpc_attribute_group);
 	if (rc) {
@@ -601,14 +610,22 @@ static int mtk6797_remove(struct spi_device *spidev)
 	struct  fpc_data *fpc = dev_get_drvdata(&spidev->dev);
 
 	sysfs_remove_group(&spidev->dev.kobj, &fpc_attribute_group);
-	wakeup_source_remove(&fpc->ttw_wl);
+	wake_lock_destroy(&fpc->ttw_wl);
 	dev_info(&spidev->dev, "%s\n", __func__);
 	return 0;
 }
 
+static void mtk6797_shutdown(struct spi_device *spidev)
+{
+	struct  fpc_data *fpc = dev_get_drvdata(&spidev->dev);
+	printk("fpc_shutdown\n");
+	select_pin_ctl(fpc, "cs_pulllow");
+	fpc_hw_power_enable(fpc, false);
+}
+
 static struct of_device_id mt6797_of_match[] = {
 	{ .compatible = "mediatek,fingerprint", },
-	{ .compatible = "mediatek,fp_node", },
+	{ .compatible = "mediatek,goodix-fp", },
 	{ .compatible = "goodix,goodix-fp", },
 	{},
 };
@@ -622,36 +639,33 @@ static struct spi_driver mtk6797_driver = {
 		.of_match_table = mt6797_of_match,
 	},
 	.probe	= mtk6797_probe,
-	.remove	= mtk6797_remove
+	.remove	= mtk6797_remove,
+	.shutdown = mtk6797_shutdown,
 };
 
-extern unsigned int is_atboot;
-/*extern unsigned int os_boot_puresys;*/
+//vivo duyihang add for puresys_recovery begin
+extern unsigned int os_boot_puresys;
+//vivo duyihang add for puresys_recovery end
 static int __init fpc_sensor_init(void)
 {
 	int status;
-
-	if (is_atboot == 1) {
-		printk("%s(): is_at_mode, exit\n", __func__);
+	if ((get_fp_id() != FPC_FPC1511) && (get_fp_id() != FPC_FPC1540)) {
+		printk("%s(): wrong fpc1511 id, exit\n", __func__);
 		return 0;
 	}
-#if 0
+	//vivo duyihang add for puresys_recovery begin
 	if (os_boot_puresys == 1) {
-		printk("%s:boot puresys, not load fpc driver!\n", __func__);
+		printk("%s:boot puresys, not load drm driver!\n", __func__);
 		return 0;
 	}
-#endif
-	if (get_fp_id() != FPC_FPC1511 && get_fp_id() != FPC_FPC1540) {
-		printk("%s(): wrong fpc id, exit\n", __func__);
-		return 0;
-	}
+	//vivo duyihang add for puresys_recovery end
+
 	status = spi_register_driver(&mtk6797_driver);
 	if (status < 0) {
 		printk("%s, fpc_sensor_init failed.\n", __func__);
 	}
 	return status;
 }
-/*module_init(fpc_sensor_init);*/
 late_initcall(fpc_sensor_init);
 
 static void __exit fpc_sensor_exit(void)

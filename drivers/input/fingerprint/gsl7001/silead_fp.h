@@ -202,8 +202,6 @@ struct fp_dev_touch_info {
 #define VDDIO_MAX 1800000
 #define VDDIO_MIN 1800000
 
-#define AP_CONTROL_CLK 1
-
 #if defined(BSP_SIL_POWER_SUPPLY_REGULATOR) && defined(BSP_SIL_POWER_SUPPLY_PINCTRL) || defined(BSP_SIL_POWER_SUPPLY_REGULATOR) && defined(BSP_SIL_POWER_SUPPLY_GPIO) || defined(BSP_SIL_POWER_SUPPLY_GPIO) && defined(BSP_SIL_POWER_SUPPLY_PINCTRL)
   #error "Don't define multiple power supply mode!"
 #endif

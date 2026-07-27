@@ -3987,7 +3987,7 @@ static int mtk_charger_probe(struct platform_device *pdev)
 	    boot_mode != KERNEL_POWER_OFF_CHARGING_BOOT &&
 	    boot_mode != LOW_POWER_OFF_CHARGING_BOOT)
 		charger_manager_force_disable_power_path(
-			info->chg1_consumer, MAIN_CHARGER, true);
+			info->chg1_consumer, MAIN_CHARGER, false);
 
 	info->init_done = true;
 	_wake_up_charger(info);

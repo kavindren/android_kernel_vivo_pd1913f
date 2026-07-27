@@ -458,7 +458,7 @@ static int mtk_switch_charging_plug_out(struct charger_manager *info)
 }
 
 static int mtk_switch_charging_do_charging(struct charger_manager *info,
-						bool en)
+										   bool en)
 {
 	struct switch_charging_alg_data *swchgalg = info->algorithm_data;
 
@@ -470,6 +470,16 @@ static int mtk_switch_charging_do_charging(struct charger_manager *info,
 		charger_manager_notifier(info, CHARGER_NOTIFY_NORMAL);
 		mtk_pe40_set_is_enable(info, en);
 		mtk_pe50_set_is_enable(info, en);
+
+		/*
+		 * mtk_charger_probe() force-disables the power path at every
+		 * boot (mtk_charger.c: charger_manager_force_disable_power_path),
+		 * assuming a prop_chgalgo-based algorithm (pca_mtk_chg.c) will
+		 * re-enable it. This board uses the older "SwitchCharging"
+		 * algorithm, which never did -- so bq25890 stayed permanently
+		 * HIZ'd (VINDPM=0x7F) and never actually charged properly.
+		 */
+		charger_dev_enable_powerpath(info->chg1_dev, true);
 	} else {
 		/* disable charging might change state, so call it first */
 		_disable_all_charging(info);
@@ -480,7 +490,6 @@ static int mtk_switch_charging_do_charging(struct charger_manager *info,
 
 	return 0;
 }
-
 static int mtk_switch_chr_pe40_init(struct charger_manager *info)
 {
 	swchg_turn_on_charging(info);

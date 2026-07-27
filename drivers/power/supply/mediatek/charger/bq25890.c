@@ -1849,31 +1849,48 @@ static irqreturn_t bq25890_irq_handler(int irq, void *data)
 	u8 pg_stat = 0;
 	enum charger_type org_chg_type;
 	bool en = false;
+	bool force_dpdm = false;
+	int i;
 	struct bq25890_info *info = (struct bq25890_info *)data;
 
 	pr_info("%s\n", __func__);
 
-	/* Skip irq if in OTG mode */
 	bq25890_is_otg_en(&en);
 	if (en)
 		return IRQ_HANDLED;
 
-	/* Set vindpm to 4.5V */
 	bq25890_set_force_vindpm(1);
 	bq25890_set_vindpm(0x13);
 
 	pg_stat = bq25890_get_pg_state();
-
 	org_chg_type = info->chg_type;
+
 	if (pg_stat) {
+		/*
+		 * BC1.2 detection is not instantaneous. probe() waits for
+		 * force_dpdm to clear (up to 5s, polled every 500ms) before
+		 * trusting vbus_stat -- the IRQ path never did this, so a
+		 * plug-in interrupt firing while detection is still running
+		 * reads vbus_stat=0 -> CHARGER_UNKNOWN, indistinguishable
+		 * from an actual unplug. This IRQ runs threaded
+		 * (IRQF_ONESHOT), so sleeping here is fine.
+		 */
+		bq25890_set_force_dpdm(1);
+		for (i = 0; i < 10; i++) {
+			msleep(500);
+			bq25890_get_force_dpdm(&force_dpdm);
+			if (!force_dpdm)
+				break;
+		}
 		info->chg_type = bq25890_get_charger_type(info);
 	} else {
-#if defined(CONFIG_PROJECT_PHY) || defined(CONFIG_PHY_MTK_SSUSB)
+		#if defined(CONFIG_PROJECT_PHY) || defined(CONFIG_PHY_MTK_SSUSB)
 		Charger_Detect_Init();
-#endif
+		#endif
 		info->chg_type = CHARGER_UNKNOWN;
 		pr_info("%s: plugout\n", __func__);
 	}
+
 	if (info->chg_type != org_chg_type)
 		bq25890_set_charger_type(info);
 

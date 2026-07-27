@@ -215,7 +215,7 @@
 		};
 		bat_temp {
 			channel = <AUXADC_BAT_TEMP>;
-			resistance-ratio = <2 1>;
+			resistance-ratio = <1 1>;
 		};
 		chip_temp {
 			channel = <AUXADC_CHIP_TEMP>;

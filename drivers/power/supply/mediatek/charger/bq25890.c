@@ -165,7 +165,23 @@ struct bq25890_info {
 	const char *eint_name;
 	enum charger_type chg_type;
 	int irq;
+
+	struct delayed_work boot_recheck_work;
 };
+
+static int bq25890_set_charger_type(struct bq25890_info *info);
+
+static void bq25890_boot_recheck_work(struct work_struct *work) {
+	struct bq25890_info *info = container_of(to_delayed_work(work),
+											 struct bq25890_info, boot_recheck_work);
+	u8 pg_stat = bq25890_get_pg_state();
+
+	if (pg_stat && info->chg_type != CHARGER_UNKNOWN) {
+		pr_info("%s: re-asserting charger type after boot settle\n",
+				__func__);
+		bq25890_set_charger_type(info);
+	}
+}
 
 static unsigned int g_input_current;
 static DEFINE_MUTEX(g_input_current_mutex);
@@ -2098,6 +2114,12 @@ static int bq25890_driver_probe(struct i2c_client *client, const struct i2c_devi
 	}
 
 	bq25890_set_auto_dpdm(1);
+
+	INIT_DELAYED_WORK(&info->boot_recheck_work, bq25890_boot_recheck_work);
+	if (pg_stat)
+		schedule_delayed_work(&info->boot_recheck_work,
+							  msecs_to_jiffies(8000));
+
 	ret = bq25890_register_irq(info);
 	if (ret < 0)
 		pr_err("%s: register irq failed (%d)\n", __func__, ret);

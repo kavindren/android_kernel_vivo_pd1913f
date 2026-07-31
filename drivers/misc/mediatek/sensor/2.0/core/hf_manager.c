@@ -869,8 +869,8 @@ static int hf_manager_drive_device(struct hf_client *client,
 
 	if (unlikely(sensor_type >= SENSOR_TYPE_SENSOR_MAX))
 		return -EINVAL;
-	pr_err("%s: type:%d cmd.data[0] = %d,cmd.data[1] = %d,cmd.data[2] = %d\n",
-		__func__, (int)sensor_type, cmd->data[0], cmd->data[1], cmd->data[2]);
+	pr_err("%s: cmd.data[0] = %d,cmd.data[1] = %d,cmd.data[2] = %d\n",
+		__func__, cmd->data[0], cmd->data[1], cmd->data[2]);
 
 	mutex_lock(&core->manager_lock);
 	manager = hf_manager_find_manager(core, sensor_type);

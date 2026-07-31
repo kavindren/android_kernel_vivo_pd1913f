@@ -1352,7 +1352,7 @@ void sync_ulposc_cali_data_to_scp(void)
 					IPI_SEND_WAIT,
 					&ipi_data[0],
 					PIN_OUT_C_SIZE_SLEEP_0,
-					500);
+					2000);
 		if (ret != IPI_ACTION_DONE) {
 			pr_err("mtk_ipi_send_compl ULPOSC2_CALI_VAL(%d,%d) fail\n",
 					ulposc_cfg[i].freq,

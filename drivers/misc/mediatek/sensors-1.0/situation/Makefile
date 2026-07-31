@@ -26,4 +26,3 @@ obj-$(CONFIG_MTK_WINDOW_ORIENTATION_HUB)			+=	window_orientation/
 obj-$(CONFIG_MTK_AMBIENT_LIGHT_SCENE_HUB)			+= ambient_light_scene/
 obj-$(CONFIG_MTK_VIVOMOTION_DETECT_HUB)			+=  vivomotion_detect/
 obj-$(CONFIG_MTK_SMARTPROX_DETECT_HUB)			+=  smartprox_detect/
-obj-$(CONFIG_MTK_DROPDEPTH_DETECT_HUB)			+=  dropdepth_detect/

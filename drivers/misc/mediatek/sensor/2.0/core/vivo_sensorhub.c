@@ -55,12 +55,13 @@ static void vivo_sensorhub_init_request(struct SCP_SENSOR_HUB_VIVO_CMD_REQ *req)
 extern int mtk_nanohub_req_send(union SCP_SENSOR_HUB_DATA *data);
 static int vivo_sensorhub_send_request(struct SCP_SENSOR_HUB_VIVO_CMD_REQ *req)
 {
-	int err = 0;
+	int err;
+
 	err = mtk_nanohub_req_send((union SCP_SENSOR_HUB_DATA *)req);
 	VIVO_INFO("mtk_nanohub_req_send %d\n", err);
 	vivo_sensorhub_dump_request(req);
 
-	return err;
+	return 0;
 }
 
 static int vivo_sensorhub_open(struct inode *inode, struct file *file)

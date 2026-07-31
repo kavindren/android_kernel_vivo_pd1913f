@@ -113,9 +113,6 @@ static int handle_to_index(int handle)
 	case ID_SMARTPROX_DETECT:
 		index = smartprox_detect;
 		break;
-	case ID_DROPDEPTH_DETECT:
-		index = dropdepth_detect;
-		break;
 	default:
 		index = -1;
 		pr_err("%s invalid handle:%d,index:%d\n", __func__,
@@ -140,15 +137,7 @@ int situation_data_report_t(int handle, uint32_t one_sample_data,
 		return -1;
 	}
 
-	if (handle == ID_WINDOW_ORIENTATION)
-		pr_err("[WINDOW_ORIENTATION]%s! %d \n", __func__, one_sample_data);
-
-	if (handle == ID_AMD)
-		pr_err("[AMD]%s! %d \n", __func__, one_sample_data);
-
-	if (handle == ID_RAISEUP_DETECT)
-		pr_err("[RAISEUP_DETECT]%s! %d\n", __func__, one_sample_data);
-	//pr_debug("situation_notify handle:%d, index:%d\n", handle, index);
+	pr_debug("situation_notify handle:%d, index:%d\n", handle, index);
 	event.time_stamp = time_stamp;
 	event.handle = handle;
 	event.flush_action = DATA_ACTION;

@@ -95,11 +95,9 @@
 #define SENSOR_TYPE_VIVOMOTION_DETECT               94
 #define SENSOR_TYPE_PROXIMITY_UNDERDISPLAY          95
 #define SENSOR_TYPE_SMARTPROX                       96
-#define SENSOR_TYPE_DROP_DEPTH                      97
-
 
 /* end sensor type */
-#define SENSOR_TYPE_MAX_NUM                            SENSOR_TYPE_DROP_DEPTH
+#define SENSOR_TYPE_MAX_NUM                            SENSOR_TYPE_SMARTPROX
 #define SENSOR_TYPE_MAX_NUM_PLUS_ONE                   (SENSOR_TYPE_MAX_NUM + 1)
 
 /*---------------------------------------------------------------------------*/
@@ -183,11 +181,9 @@
 #define ID_VIVOMOTION_DETECT    (ID_BASE + SENSOR_TYPE_VIVOMOTION_DETECT - 1)
 #define ID_PROXIMITY_UNDERDISPLAY  (ID_BASE + SENSOR_TYPE_PROXIMITY_UNDERDISPLAY - 1)
 #define ID_SMARTPROX_DETECT     (ID_BASE + SENSOR_TYPE_SMARTPROX - 1)
-#define ID_DROPDEPTH_DETECT  (ID_BASE + SENSOR_TYPE_DROP_DEPTH - 1)
-
 
 /* end sensor ID */
-#define ID_SENSOR_MAX_HANDLE    (ID_DROPDEPTH_DETECT)
+#define ID_SENSOR_MAX_HANDLE    (ID_SMARTPROX_DETECT)
 #define ID_SENSOR_MAX_HANDLE_PLUS_ONE    (ID_SENSOR_MAX_HANDLE + 1)
 
 #if (ID_SENSOR_MAX_HANDLE_PLUS_ONE != SENSOR_TYPE_MAX_NUM)

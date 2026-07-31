@@ -501,9 +501,9 @@ static int maghub_factory_get_data(int32_t data[3], int *status)
 
 	/* get raw data */
 	err = maghub_get_data(&data[0], &data[1], &data[2], status);
-	data[0] = data[0];
-	data[1] = data[1];
-	data[2] = data[2];
+	data[0] = data[0] / CONVERT_M_DIV;
+	data[1] = data[1] / CONVERT_M_DIV;
+	data[2] = data[2] / CONVERT_M_DIV;
 
 	return err;
 }

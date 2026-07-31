@@ -480,6 +480,34 @@ static void scp_A_set_ready(void)
 #if SCP_BOOT_TIME_OUT_MONITOR
 static void scp_wait_ready_timeout(unsigned long data)
 {
+	/* check if any ipi has not served yet */
+	int i;
+	int ret = 0;
+	int id;
+	/* ipi_ready is in mbox3 */
+	int mbox3_flag = false;
+	for (i = 0; i < IRQ_NUMBER; i++) {
+#ifdef CONFIG_MTK_GIC_V3_EXT
+		ret = mt_irq_get_pending(scp_ipi_irqs[i].irq_no);
+#endif
+		if (ret) {
+			if (i < 2)
+				pr_info("[SCP] ipc%d wakeup\n", i);
+			else {
+				id = i - 2;
+				pr_notice("[SCP] mbox[%d] set reg: %x\n", id,
+					readl(scp_mbox_info[id].set_irq_reg));
+				if (id == 3)
+					mbox3_flag = true;
+			}
+		}
+	}
+	if (mbox3_flag) {
+		/* set a timer one more time */
+		pr_notice("[SCP] reset scp_ready_timer\n");
+		mod_timer(&scp_ready_timer[SCP_A_ID], jiffies + SCP_READY_TIMEOUT);
+		return;
+	}
 #if SCP_RECOVERY_SUPPORT
 	if (scp_timeout_times < 10)
 		scp_send_reset_wq(RESET_TYPE_TIMEOUT);
@@ -868,6 +896,14 @@ DEVICE_ATTR(scp_reset, 0200, NULL, scp_reset_trigger);
  * debug use
  */
 
+//add by sensor team for scp reset
+void sensorhub_scp_reset(void)
+{
+	const char buf[] = "666 1 10000";
+	pr_err("%s: calling scpreset_trigger...", __func__);
+	scp_reset_trigger(NULL, NULL, buf, sizeof(buf));
+}
+
 static ssize_t scp_recovery_flag_r(struct device *dev
 			, struct device_attribute *attr, char *buf)
 {
@@ -890,6 +926,37 @@ static ssize_t scp_recovery_flag_w(struct device *dev
 DEVICE_ATTR(recovery_flag, 0600, scp_recovery_flag_r, scp_recovery_flag_w);
 
 #endif
+
+
+/******************************************************************************
+ *****************************************************************************/
+static ssize_t scp_set_log_filter(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	uint32_t filter;
+
+	if (sscanf(buf, "0x%08x", &filter) != 1)
+		return -EINVAL;
+
+	ret = mtk_ipi_send(&scp_ipidev, IPI_OUT_SCP_LOG_FILTER_1, 0, &filter,
+			   PIN_OUT_SIZE_SCP_LOG_FILTER_1, 0);
+	switch (ret) {
+	case IPI_ACTION_DONE:
+		pr_notice("[SCP] Set log filter to 0x%08x\n", filter);
+		return count;
+
+	case IPI_PIN_BUSY:
+		pr_notice("[SCP] IPI busy. Set log filter failed!\n");
+		return -EBUSY;
+
+	default:
+		pr_notice("[SCP] IPI error. Set log filter failed!\n");
+		return -EIO;
+	}
+}
+DEVICE_ATTR(log_filter, 0200, NULL, scp_set_log_filter);
+
 
 /******************************************************************************
  *****************************************************************************/

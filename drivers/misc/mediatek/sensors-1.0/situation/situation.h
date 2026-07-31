@@ -49,7 +49,6 @@ enum situation_index_table {
 	ambient_light_scene,
 	vivomotion_detect,
 	smartprox_detect,
-	dropdepth_detect,
 	max_situation_support,
 };
 

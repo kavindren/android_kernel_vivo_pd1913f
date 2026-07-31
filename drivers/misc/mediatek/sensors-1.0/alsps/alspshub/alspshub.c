@@ -85,10 +85,6 @@ static int32_t ps_hardware_broken = -1;
 static DEFINE_MUTEX(alspshub_mutex);
 static DEFINE_SPINLOCK(calibration_lock);
 
-/*add by vivo sensor team for als_glass_param */
-extern unsigned int mdss_report_lcm_id(void);
-
-
 enum {
 	CMC_BIT_ALS = 1,
 	CMC_BIT_PS = 2,
@@ -309,10 +305,12 @@ static void alspshub_init_done_work(struct work_struct *work)
 {
 	struct alspshub_ipi_data *obj = obj_ipi_data;
 	int err = 0;
-	unsigned int lcm_soft_id = 0;
-	uint32_t cmd_args[VSEN_COMMAND_ARGS_SIZE] = {0};
 #ifndef MTK_OLD_FACTORY_CALIBRATION
 	int32_t cfg_data[2] = {0};
+#endif
+
+#if defined CONFIG_VSEN_SCP_RESET_ENABLE
+	uint32_t cmd_args[VSEN_COMMAND_ARGS_SIZE] = {0};
 #endif
 
 	if (atomic_read(&obj->scp_init_done) == 0) {
@@ -345,16 +343,6 @@ static void alspshub_init_done_work(struct work_struct *work)
 	if (err < 0)
 		pr_err("sensor_cfg_to_hub als fail\n");
 #endif
-	/*set sreen id for als glass parameter begin*/
-	lcm_soft_id = mdss_report_lcm_id();
-	cmd_args[0] = SENSOR_COMMAND_LIGHT_SET_LCM_ID;
-	cmd_args[1] = lcm_soft_id;
-	err = sensor_set_vsen_cmd_to_hub(ID_LIGHT, cmd_args, ARRAY_SIZE(cmd_args));
-	pr_err("scp_reset,set lcm_soft_id:%d\n", lcm_soft_id);
-	if (err < 0)
-		pr_err("scp reset, SENSOR_COMMAND_LIGHT_SET_LCM_ID fail!\n");
-	/*set sreen id for als glass parameter end*/
-
 /* ADD by vsen team start */
 #if defined CONFIG_VSEN_SCP_RESET_ENABLE
 	if (ps_cali_data != -1) {

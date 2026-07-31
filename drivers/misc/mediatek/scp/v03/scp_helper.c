@@ -128,9 +128,7 @@ static struct timer_list scp_ready_timer[SCP_CORE_TOTAL];
 #endif
 static struct scp_work_struct scp_A_notify_work;
 
-#if SCP_BOOT_TIME_OUT_MONITOR
 static unsigned int scp_timeout_times;
-#endif
 
 static DEFINE_MUTEX(scp_A_notify_mutex);
 static DEFINE_MUTEX(scp_feature_mutex);
@@ -532,7 +530,7 @@ static int scp_A_ready_ipi_handler(unsigned int id, void *prdata, void *data,
  * @param data: ipi data
  * @param len:  length of ipi data
  */
-static int scp_err_info_handler(unsigned int id, void *prdata, void *data,
+static void scp_err_info_handler(int id, void *prdata, void *data,
 				 unsigned int len)
 {
 	struct error_info *info = (struct error_info *)data;
@@ -541,7 +539,7 @@ static int scp_err_info_handler(unsigned int id, void *prdata, void *data,
 		pr_notice("[SCP] error: incorrect size %d of error_info\n",
 				len);
 		WARN_ON(1);
-		return 0;
+		return;
 	}
 
 	/* Ensure the context[] is terminated by the NULL character. */
@@ -554,8 +552,6 @@ static int scp_err_info_handler(unsigned int id, void *prdata, void *data,
 		report_hub_dmd(info->case_id, info->sensor_id, info->context);
 	else
 		pr_debug("[SCP] warning: report_hub_dmd() not defined.\n");
-
-	return 0;
 }
 
 
@@ -873,6 +869,7 @@ DEVICE_ATTR(scp_reset, 0200, NULL, scp_reset_trigger);
  * debug use
  */
 
+
 //add by sensor team for scp reset
 void sensorhub_scp_reset(void)
 {
@@ -880,6 +877,8 @@ void sensorhub_scp_reset(void)
 	pr_err("%s: calling scpreset_trigger...", __func__);
 	scp_reset_trigger(NULL, NULL, buf, sizeof(buf));
 }
+
+
 static ssize_t scp_recovery_flag_r(struct device *dev
 			, struct device_attribute *attr, char *buf)
 {
@@ -1138,13 +1137,8 @@ static int scp_reserve_memory_ioremap(void)
 void set_scp_mpu(void)
 {
 	struct emimpu_region_t md_region;
-	int ret;
 
-	ret = mtk_emimpu_init_region(&md_region, MPU_REGION_ID_SCP_SMEM);
-	if (ret) {
-		pr_err("[SCP]mtk_emimpu_init_region failed\n");
-		return;
-	}
+	mtk_emimpu_init_region(&md_region, MPU_REGION_ID_SCP_SMEM);
 	mtk_emimpu_set_addr(&md_region, scp_mem_base_phys,
 		scp_mem_base_phys + scp_mem_size - 1);
 	mtk_emimpu_set_apc(&md_region, MPU_DOMAIN_D0,
@@ -1391,14 +1385,6 @@ void print_clk_registers(void)
 		pr_notice("[SCP] cfg_core0[0x%04x]: 0x%08x\n", offset, value);
 	}
 
-#if defined(CONFIG_MACH_MT6833)
-	pr_notice("[SCP] dumping core0_intc\n");
-	// 0x32000 ~ 0x3225C (inclusive)
-	for (offset = 0x2000; offset <= 0x225C; offset += 4) {
-		value = (unsigned int)readl(cfg_core0 + offset);
-		pr_notice("[SCP] core0_intc[0x%04x]: 0x%08x\n", offset, value);
-	}
-#endif
 }
 
 void scp_reset_wait_timeout(void)

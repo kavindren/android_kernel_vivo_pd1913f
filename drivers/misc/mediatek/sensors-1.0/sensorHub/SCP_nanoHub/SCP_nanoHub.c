@@ -950,10 +950,6 @@ static void SCP_sensorHub_init_sensor_state(void)
 	mSensorState[SENSOR_TYPE_SMARTPROX].rate = SENSOR_RATE_ONCHANGE;
 	mSensorState[SENSOR_TYPE_SMARTPROX].timestamp_filter = false;
 
-	mSensorState[SENSOR_TYPE_DROP_DEPTH].sensorType = SENSOR_TYPE_DROP_DEPTH;
-	mSensorState[SENSOR_TYPE_DROP_DEPTH].rate = SENSOR_RATE_ONCHANGE;
-	mSensorState[SENSOR_TYPE_DROP_DEPTH].timestamp_filter = false;
-
 	mSensorState[SENSOR_TYPE_AMBIENT_LIGHT_SCENE].sensorType = SENSOR_TYPE_AMBIENT_LIGHT_SCENE;
 	mSensorState[SENSOR_TYPE_AMBIENT_LIGHT_SCENE].rate = SENSOR_RATE_ONCHANGE;
 	mSensorState[SENSOR_TYPE_AMBIENT_LIGHT_SCENE].timestamp_filter = false;

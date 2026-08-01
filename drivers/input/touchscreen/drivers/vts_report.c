@@ -12,18 +12,18 @@
 #include "vts_core.h"
 
 /*
-*	TP report point callback
-*/
+ *	TP report point callback
+ */
 
 struct tp_point_callback {
 	struct list_head list;
 	struct drivers_callback_handler *handler;
 } point_callbacks;
 
-int tp_report_point_register_callback(struct drivers_callback_handler *handler) {	
+int tp_report_point_register_callback(struct drivers_callback_handler *handler) {
 
 	struct tp_point_callback *new_callback = NULL;
-	
+
 	new_callback = kzalloc(sizeof(struct tp_point_callback), GFP_KERNEL);
 	if (!new_callback) {
 		pr_err("%s: Failed at allocate callback struct\n", __func__);
@@ -40,14 +40,14 @@ EXPORT_SYMBOL_GPL(tp_report_point_register_callback);
 
 void tp_report_point_unregister_callback(char *callback_name) {
 	struct tp_point_callback *entry;
-	
+
 	if (!list_empty(&point_callbacks.list)) {
 		list_for_each_entry(entry, &point_callbacks.list, list)
-			if (!strcmp(entry->handler->name, callback_name)) {
-				list_del(&entry->list);
-				kfree(entry);
-				return;
-			}
+		if (!strcmp(entry->handler->name, callback_name)) {
+			list_del(&entry->list);
+			kfree(entry);
+			return;
+		}
 	}
 }
 EXPORT_SYMBOL_GPL(tp_report_point_unregister_callback);
@@ -56,9 +56,9 @@ EXPORT_SYMBOL_GPL(tp_report_point_unregister_callback);
 void tp_point_switch_do_callback(int touchId, int x, int y, int is_down)
 {
 	struct tp_point_callback *entry;
-	
+
 	if (!list_empty(&point_callbacks.list)) {
-		list_for_each_entry(entry, &point_callbacks.list, list) {			
+		list_for_each_entry(entry, &point_callbacks.list, list) {
 			entry->handler->point_report(touchId, x, y, is_down);
 		}
 	}
@@ -66,7 +66,7 @@ void tp_point_switch_do_callback(int touchId, int x, int y, int is_down)
 
 #ifdef CONFIG_INPUT_TIMESTAMP
 static void vts_input_event(struct input_dev *dev,
-		 unsigned int type, unsigned int code, int value, ktime_t timestamp)
+							unsigned int type, unsigned int code, int value, ktime_t timestamp)
 {
 	struct vts_device *vtsdev = input_get_drvdata(dev);
 
@@ -77,7 +77,7 @@ static void vts_input_event(struct input_dev *dev,
 }
 
 static void vts_input_mt_report_slot_state(struct input_dev *dev,
-				unsigned int tool_type, bool active, ktime_t timestamp)
+										   unsigned int tool_type, bool active, ktime_t timestamp)
 {
 	struct vts_device *vtsdev = input_get_drvdata(dev);
 
@@ -89,13 +89,13 @@ static void vts_input_mt_report_slot_state(struct input_dev *dev,
 
 #else
 static void vts_input_event(struct input_dev *dev,
-		 unsigned int type, unsigned int code, int value, ktime_t timestamp)
+							unsigned int type, unsigned int code, int value, ktime_t timestamp)
 {
 	input_event(dev, type, code, value);
 }
 
 static void vts_input_mt_report_slot_state(struct input_dev *dev,
-				unsigned int tool_type, bool active, ktime_t timestamp)
+										   unsigned int tool_type, bool active, ktime_t timestamp)
 {
 	input_mt_report_slot_state(dev, tool_type, active);
 }
@@ -134,7 +134,7 @@ struct vts_report_event {
 };
 
 static void inline vts_report_init_event(struct vts_report_event *event, int touch_id,
-	int nr_touches, int x, int y, int wx, int wy, int keycode, ktime_t kt)
+										 int nr_touches, int x, int y, int wx, int wy, int keycode, ktime_t kt)
 {
 	event->touch_id = touch_id;
 	event->nr_touches = nr_touches;
@@ -148,7 +148,7 @@ static void inline vts_report_init_event(struct vts_report_event *event, int tou
 }
 
 static int vts_report_add_event(struct vts_report *report, int touch_id, int nr_touches,
-	int x, int y, int wx, int wy, int keycode, ktime_t kt, struct list_head *head)
+								int x, int y, int wx, int wy, int keycode, ktime_t kt, struct list_head *head)
 {
 	struct vts_report_event *event;
 	struct vts_device *vtsdev = container_of(report, struct vts_device, report);
@@ -269,22 +269,64 @@ int vts_report_coordinates_get(struct vts_device *vtsdev, u16 *x, u16 *y, size_t
 
 int vts_update_dclick_point(struct vts_device *vtsdev,int x ,int y)
 {
- 	vtsdev->screen_clock_point.realX = x ;
+	vtsdev->screen_clock_point.realX = x ;
 	vtsdev->screen_clock_point.realY = y ;
 	return 0;
 }
+/* vivo_ts_fp: virtual input device consumed by fp_hbm_input.c (fp_input_connect())
+ * to trigger display HBM boost during optical fingerprint capture.
+ * Reconstructed: upstream vivoTsInputReport(VTS_GESTURE_EVENT, 254, ...) call was
+ * refactored into vts_report_event_down/up() but the body was stubbed out in this
+ * source drop. */
+static struct input_dev *vts_fp_idev;
+
+static int vts_fp_idev_init(void)
+{
+	int ret;
+
+	if (vts_fp_idev)
+		return 0;
+
+	vts_fp_idev = input_allocate_device();
+	if (!vts_fp_idev)
+		return -ENOMEM;
+
+	vts_fp_idev->name = "vivo_ts_fp";
+	__set_bit(EV_KEY, vts_fp_idev->evbit);
+	__set_bit(KEY_FINGERPRINT_WAKE, vts_fp_idev->keybit);
+
+	ret = input_register_device(vts_fp_idev);
+	if (ret) {
+		input_free_device(vts_fp_idev);
+		vts_fp_idev = NULL;
+	}
+	return ret;
+}
+
 int vts_report_event_down(struct vts_device *vtsdev, enum vts_event event)
 {
+	if (event == VTS_EVENT_GESTURE_FINGERPRINT_DETECT) {
+		if (vts_fp_idev_init())
+			return -ENODEV;
+		input_report_key(vts_fp_idev, KEY_FINGERPRINT_WAKE, 1);
+		input_sync(vts_fp_idev);
+	}
 	return 0;
 }
 
 int vts_report_event_up(struct vts_device *vtsdev, enum vts_event event)
 {
+	if (event == VTS_EVENT_GESTURE_FINGERPRINT_DETECT) {
+		if (vts_fp_idev_init())
+			return -ENODEV;
+		input_report_key(vts_fp_idev, KEY_FINGERPRINT_WAKE, 0);
+		input_sync(vts_fp_idev);
+	}
 	return 0;
 }
 
 int vts_report_point_down(struct vts_device *vtsdev, int touch_id, int nr_touches,
-	int x, int y, int wx, int wy, bool large_press, u8 *custom_data, size_t custom_size, ktime_t kt)
+						  int x, int y, int wx, int wy, bool large_press, u8 *custom_data, size_t custom_size, ktime_t kt)
 {
 	struct vts_report *report = &vtsdev->report;
 	struct vts_point point_info;
@@ -292,7 +334,7 @@ int vts_report_point_down(struct vts_device *vtsdev, int touch_id, int nr_touche
 	u8 buf[32];
 	int i;
 	int high_x = 0;
-	int high_y = 0;	
+	int high_y = 0;
 	int display_x, display_y, dimention_x, dimention_y;
 	vts_property_get(vtsdev, VTS_PROPERTY_DISPLAY_X, &display_x);
 	vts_property_get(vtsdev, VTS_PROPERTY_DISPLAY_Y, &display_y);
@@ -315,7 +357,7 @@ int vts_report_point_down(struct vts_device *vtsdev, int touch_id, int nr_touche
 			x = x * dimention_x / vtsdev->fw_x;
 			y = y * dimention_y / vtsdev->fw_y;
 		}
-	
+
 		high_x = x * display_x / dimention_x;
 		high_y = y * display_y / dimention_y;
 	}
@@ -409,12 +451,12 @@ int vts_report_ic_status(struct vts_device *vtsdev, int status)
 
 int vts_report_set_flags(struct vts_device *vtsdev, unsigned long flags)
 {
-#ifndef CONFIG_INPUT_TIMESTAMP
+	#ifndef CONFIG_INPUT_TIMESTAMP
 	if(flags & FLAGS_REPORT_TIMESTAMP) {
 		vts_dev_info(vtsdev, "not support input event with timestamp\n");
 		return -EPERM;
 	}
-#endif
+	#endif
 	vtsdev->report.flags = flags;
 	return 0;
 }
@@ -596,12 +638,12 @@ int vts_report_init(struct vts_device *vtsdev)
 	mutex_init(&report->lock);
 	report->slotbit = 0;
 	vts_property_get(vtsdev, VTS_PROPERTY_REPORT_TIMESTAMP, &report_timestamp);
-#ifdef CONFIG_INPUT_TIMESTAMP
+	#ifdef CONFIG_INPUT_TIMESTAMP
 	if (report_timestamp)
 		report->flags |= FLAGS_REPORT_TIMESTAMP;
-#else
+	#else
 	report->flags &= ~FLAGS_REPORT_TIMESTAMP;
-#endif
+	#endif
 	INIT_LIST_HEAD(&report->down_points);
 	INIT_LIST_HEAD(&report->up_points);
 	INIT_LIST_HEAD(&report->keys);

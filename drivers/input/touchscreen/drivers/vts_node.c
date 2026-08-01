@@ -43,6 +43,7 @@ struct vts_cmd_handler {
 
 const static struct vts_cmd_handler cmd_handlers[] = {
 	{"vts_lcd", VTS_STA_LCD},
+	{"vts_finger_highlight", VTS_STA_FINGER_HIGHLIGHT},
 };
 
 static int vts_state_id_lookup(const char *tag, enum vts_state *state_id)

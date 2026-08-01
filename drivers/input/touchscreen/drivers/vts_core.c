@@ -215,6 +215,12 @@ static enum vts_run_mode vts_expected_mode(struct vts_device *vtsdev)
 	if (tddi && vts_state_get(vtsdev, VTS_STA_TDDI_LCD))
 		return VTS_ST_NORMAL;
 
+	if (vts_state_get(vtsdev, VTS_STA_FINGER_HIGHLIGHT))
+		return VTS_ST_GESTURE;
+
+	if (vts_get_run_mode(vtsdev) == VTS_ST_GESTURE)
+		return VTS_ST_GESTURE;
+
 	return VTS_ST_SLEEP;
 }
 

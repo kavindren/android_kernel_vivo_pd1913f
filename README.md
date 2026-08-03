@@ -38,12 +38,11 @@ This project is focused on updating security components and adding more tools (K
   - [x] Temperature sensors
   - [x] RIL, Wi-Fi, Bluetooth
   - [x] USB & MTP
+  - [x] Fingerprint
 - **In progress (Known issues):**
-  - [ ] **Fingerprint**
   - [ ] **NFC**
-  - [ ] **Light sensor**
   - [ ] **Camera**
-  - [ ] **vivo Fast Charge**
+  - [ ] **vivo FlashCharge** - impossible due to missing vivo drivers
 
 ---
 

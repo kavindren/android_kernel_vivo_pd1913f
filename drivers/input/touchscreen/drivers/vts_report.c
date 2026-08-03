@@ -310,6 +310,15 @@ int vts_report_event_down(struct vts_device *vtsdev, enum vts_event event)
 			return -ENODEV;
 		input_report_key(vts_fp_idev, KEY_FINGERPRINT_WAKE, 1);
 		input_sync(vts_fp_idev);
+	} else if (event == VTS_EVENT_GESTURE_DOUBLE_CLICK) {
+		/* DT2W: vivo_ts already declares KEY_WAKEUP in its keybit, report directly on it.
+		 * NOTE: down/up are called back-to-back by the caller with ~0 gap; a bare
+		 * 0-duration press gets filtered somewhere upstream, so hold briefly. */
+		if (!vtsdev->idev)
+			return -ENODEV;
+		input_report_key(vtsdev->idev, KEY_WAKEUP, 1);
+		input_sync(vtsdev->idev);
+		usleep_range(8000, 10000);
 	}
 	return 0;
 }
@@ -321,6 +330,11 @@ int vts_report_event_up(struct vts_device *vtsdev, enum vts_event event)
 			return -ENODEV;
 		input_report_key(vts_fp_idev, KEY_FINGERPRINT_WAKE, 0);
 		input_sync(vts_fp_idev);
+	} else if (event == VTS_EVENT_GESTURE_DOUBLE_CLICK) {
+		if (!vtsdev->idev)
+			return -ENODEV;
+		input_report_key(vtsdev->idev, KEY_WAKEUP, 0);
+		input_sync(vtsdev->idev);
 	}
 	return 0;
 }

@@ -18,7 +18,7 @@
 static struct situation_context *situation_context_obj;
 
 static struct situation_init_info *
-	situation_init_list[max_situation_support] = {0};
+situation_init_list[max_situation_support] = {0};
 
 static struct situation_context *situation_context_alloc_object(void)
 {
@@ -47,84 +47,84 @@ static int handle_to_index(int handle)
 	int index = -1;
 
 	switch (handle) {
-	case ID_IN_POCKET:
-		index = inpocket;
-		break;
-	case ID_STATIONARY_DETECT:
-		index = stationary;
-		break;
-	case ID_WAKE_GESTURE:
-		index = wake_gesture;
-		break;
-	case ID_GLANCE_GESTURE:
-		index = glance_gesture;
-		break;
-	case ID_PICK_UP_GESTURE:
-		index = pickup_gesture;
-		break;
-	case ID_ANSWER_CALL:
-		index = answer_call;
-		break;
-	case ID_MOTION_DETECT:
-		index = motion_detect;
-		break;
-	case ID_DEVICE_ORIENTATION:
-		index = device_orientation;
-		break;
-	case ID_TILT_DETECTOR:
-		index = tilt_detector;
-		break;
-	case ID_FLAT:
-		index = flat;
-		break;
-	case ID_SAR:
-		index = sar;
-		break;
-	case ID_SAR_SECONDARY:
-		index = sar_secondary;
-		break;
-	case ID_ANGLE_JUDGE:
-		index = angle_judge;
-		break;
-	case ID_AMD:
-		index = amd;
-		break;
-	case ID_RAISEUP_DETECT:
-		index = raiseup_detect;
-		break;
-	case ID_PUTDOWN_DETECT:
-		index = putdown_detect;
-		break;
-	case ID_ANGLE_DIRECTION:
-		index = angle_direction;
-		break;
-	case ID_DROPDOWN_DETECT:
-		index = dropdown_detect;
-		break;
-	case ID_WINDOW_ORIENTATION:
-		index = window_orientation;
-		break;
-	case ID_AMBIENT_LIGHT_SCENE:
-		index = ambient_light_scene;
-		break;
-	case ID_VIVOMOTION_DETECT:
-		index = vivomotion_detect;
-		break;
-	case ID_SMARTPROX_DETECT:
-		index = smartprox_detect;
-		break;
-	default:
-		index = -1;
-		pr_err("%s invalid handle:%d,index:%d\n", __func__,
-			handle, index);
-		return index;
+		case ID_IN_POCKET:
+			index = inpocket;
+			break;
+		case ID_STATIONARY_DETECT:
+			index = stationary;
+			break;
+		case ID_WAKE_GESTURE:
+			index = wake_gesture;
+			break;
+		case ID_GLANCE_GESTURE:
+			index = glance_gesture;
+			break;
+		case ID_PICK_UP_GESTURE:
+			index = pickup_gesture;
+			break;
+		case ID_ANSWER_CALL:
+			index = answer_call;
+			break;
+		case ID_MOTION_DETECT:
+			index = motion_detect;
+			break;
+		case ID_DEVICE_ORIENTATION:
+			index = device_orientation;
+			break;
+		case ID_TILT_DETECTOR:
+			index = tilt_detector;
+			break;
+		case ID_FLAT:
+			index = flat;
+			break;
+		case ID_SAR:
+			index = sar;
+			break;
+		case ID_SAR_SECONDARY:
+			index = sar_secondary;
+			break;
+		case ID_ANGLE_JUDGE:
+			index = angle_judge;
+			break;
+		case ID_AMD:
+			index = amd;
+			break;
+		case ID_RAISEUP_DETECT:
+			index = raiseup_detect;
+			break;
+		case ID_PUTDOWN_DETECT:
+			index = putdown_detect;
+			break;
+		case ID_ANGLE_DIRECTION:
+			index = angle_direction;
+			break;
+		case ID_DROPDOWN_DETECT:
+			index = dropdown_detect;
+			break;
+		case ID_WINDOW_ORIENTATION:
+			index = window_orientation;
+			break;
+		case ID_AMBIENT_LIGHT_SCENE:
+			index = ambient_light_scene;
+			break;
+		case ID_VIVOMOTION_DETECT:
+			index = vivomotion_detect;
+			break;
+		case ID_SMARTPROX_DETECT:
+			index = smartprox_detect;
+			break;
+		default:
+			index = -1;
+			pr_err("%s invalid handle:%d,index:%d\n", __func__,
+				   handle, index);
+			return index;
 	}
 	pr_debug("%s handle:%d, index:%d\n", __func__, handle, index);
 	return index;
 }
 
 int situation_data_report_t(int handle, uint32_t one_sample_data,
-	int64_t time_stamp)
+							int64_t time_stamp)
 {
 	int err = 0, index = -1;
 	struct sensor_event event;
@@ -281,60 +281,60 @@ static int situation_enable_and_batch(int index)
 	if (cxt->ctl_context[index].power == 1 &&
 		cxt->ctl_context[index].enable == 0) {
 		pr_debug("SITUATION disable\n");
-		/* turn off the power */
-		err = cxt->ctl_context[index].situation_ctl.open_report_data(0);
-		if (err) {
-			pr_err("situation turn off power err = %d\n",
-				err);
-			return -1;
-		}
-		pr_debug("situation turn off power done\n");
-
-		cxt->ctl_context[index].power = 0;
-		cxt->ctl_context[index].delay_ns = -1;
-		pr_debug("SITUATION disable done\n");
-		return 0;
+	/* turn off the power */
+	err = cxt->ctl_context[index].situation_ctl.open_report_data(0);
+	if (err) {
+		pr_err("situation turn off power err = %d\n",
+			   err);
+		return -1;
 	}
-	/* power off -> power on */
-	if (cxt->ctl_context[index].power == 0 &&
-		cxt->ctl_context[index].enable == 1) {
-		pr_debug("SITUATION power on\n");
+	pr_debug("situation turn off power done\n");
+
+	cxt->ctl_context[index].power = 0;
+	cxt->ctl_context[index].delay_ns = -1;
+	pr_debug("SITUATION disable done\n");
+	return 0;
+		}
+		/* power off -> power on */
+		if (cxt->ctl_context[index].power == 0 &&
+			cxt->ctl_context[index].enable == 1) {
+			pr_debug("SITUATION power on\n");
 		err = cxt->ctl_context[index].situation_ctl.open_report_data(1);
 		if (err) {
 			pr_err("situation turn on power err = %d\n",
-				err);
+				   err);
 			return -1;
 		}
 		pr_debug("situation turn on power done\n");
 
 		cxt->ctl_context[index].power = 1;
 		pr_debug("SITUATION power on done\n");
-	}
-	/* rate change */
-	if (cxt->ctl_context[index].power == 1 &&
-		cxt->ctl_context[index].delay_ns >= 0) {
-		pr_debug("SITUATION set batch\n");
-		/* set ODR, fifo timeout latency */
-		if (cxt->ctl_context[index].situation_ctl.is_support_batch)
-			err = cxt->ctl_context[index].situation_ctl.batch(0,
-				cxt->ctl_context[index].delay_ns,
-				cxt->ctl_context[index].latency_ns);
-		else
-			err = cxt->ctl_context[index].situation_ctl.batch(0,
-				cxt->ctl_context[index].delay_ns, 0);
-		if (err) {
-			pr_err("situation set batch(ODR) err %d\n",
-				err);
-			return -1;
-		}
-		pr_debug("situation set ODR, fifo latency done\n");
-	}
-	return 0;
+			}
+			/* rate change */
+			if (cxt->ctl_context[index].power == 1 &&
+				cxt->ctl_context[index].delay_ns >= 0) {
+				pr_debug("SITUATION set batch\n");
+			/* set ODR, fifo timeout latency */
+			if (cxt->ctl_context[index].situation_ctl.is_support_batch)
+				err = cxt->ctl_context[index].situation_ctl.batch(0,
+																  cxt->ctl_context[index].delay_ns,
+													  cxt->ctl_context[index].latency_ns);
+				else
+					err = cxt->ctl_context[index].situation_ctl.batch(0,
+																	  cxt->ctl_context[index].delay_ns, 0);
+					if (err) {
+						pr_err("situation set batch(ODR) err %d\n",
+							   err);
+						return -1;
+					}
+					pr_debug("situation set ODR, fifo latency done\n");
+				}
+				return 0;
 }
 #endif
 
 static ssize_t situation_store_active(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t count)
+									  struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct situation_context *cxt = situation_context_obj;
 	int err = 0, handle = -1, en = 0, index = -1;
@@ -361,37 +361,37 @@ static ssize_t situation_store_active(struct device *dev,
 		err = -1;
 		goto err_out;
 	}
-#ifdef CONFIG_NANOHUB
+	#ifdef CONFIG_NANOHUB
 	if (cxt->ctl_context[index].enable == 1) {
 		if (cxt->ctl_context[index].situation_ctl.open_report_data
 			== NULL) {
 			pr_err("open_report_data() is NULL, %d\n", index);
-			goto err_out;
-		}
-		err = cxt->ctl_context[index].situation_ctl.open_report_data(1);
-		if (err) {
-			pr_err("situation turn on power err = %d\n", err);
-			goto err_out;
-		}
+		goto err_out;
+			}
+			err = cxt->ctl_context[index].situation_ctl.open_report_data(1);
+			if (err) {
+				pr_err("situation turn on power err = %d\n", err);
+				goto err_out;
+			}
 	} else {
 		if (cxt->ctl_context[index].situation_ctl.open_report_data
 			== NULL) {
 			pr_err("open_report_data() is NULL, %d\n", index);
-			goto err_out;
-		}
-		err = cxt->ctl_context[index].situation_ctl.open_report_data(0);
-		if (err) {
-			pr_err("situation turn off power err = %d\n", err);
-			goto err_out;
-		}
+		goto err_out;
+			}
+			err = cxt->ctl_context[index].situation_ctl.open_report_data(0);
+			if (err) {
+				pr_err("situation turn off power err = %d\n", err);
+				goto err_out;
+			}
 	}
-#else
+	#else
 	err = situation_enable_and_batch(index);
-#endif
+	#endif
 	pr_debug("%s done\n", __func__);
-#ifdef CONFIG_NANOHUB
-err_out:
-#endif
+	#ifdef CONFIG_NANOHUB
+	err_out:
+	#endif
 	mutex_unlock(&situation_context_obj->situation_op_mutex);
 	if (err)
 		return err;
@@ -401,7 +401,7 @@ err_out:
 
 /*----------------------------------------------------------------------------*/
 static ssize_t situation_show_active(struct device *dev,
-	struct device_attribute *attr, char *buf)
+									 struct device_attribute *attr, char *buf)
 {
 	struct situation_context *cxt = NULL;
 	int i;
@@ -410,22 +410,22 @@ static ssize_t situation_show_active(struct device *dev,
 	cxt = situation_context_obj;
 	for (i = 0; i < max_situation_support; i++) {
 		pr_debug("situ handle:%d active: %d\n",
-			i, cxt->ctl_context[i].is_active_data);
+				 i, cxt->ctl_context[i].is_active_data);
 		s_len += snprintf(buf + s_len, PAGE_SIZE, "id:%d, en:%d\n",
-			i, cxt->ctl_context[i].is_active_data);
+						  i, cxt->ctl_context[i].is_active_data);
 	}
 	return s_len;
 }
 
 static ssize_t situation_store_batch(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t count)
+									 struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct situation_context *cxt = situation_context_obj;
 	int index = -1, handle = 0, flag = 0, err = 0;
 	int64_t samplingPeriodNs = 0, maxBatchReportLatencyNs = 0;
 
 	err = sscanf(buf, "%d,%d,%lld,%lld",
-		&handle, &flag, &samplingPeriodNs, &maxBatchReportLatencyNs);
+				 &handle, &flag, &samplingPeriodNs, &maxBatchReportLatencyNs);
 	if (err != 4) {
 		pr_err("%s param error: err =%d\n", __func__, err);
 		return err;
@@ -436,12 +436,12 @@ static ssize_t situation_store_batch(struct device *dev,
 		return -1;
 	}
 	pr_debug("handle %d, flag:%d, Period:%lld, Latency: %lld\n",
-		handle, flag, samplingPeriodNs, maxBatchReportLatencyNs);
+			 handle, flag, samplingPeriodNs, maxBatchReportLatencyNs);
 
 	cxt->ctl_context[index].delay_ns = samplingPeriodNs;
 	cxt->ctl_context[index].latency_ns = maxBatchReportLatencyNs;
 	mutex_lock(&situation_context_obj->situation_op_mutex);
-#ifdef CONFIG_NANOHUB
+	#ifdef CONFIG_NANOHUB
 	if (cxt->ctl_context[index].delay_ns >= 0) {
 		if (cxt->ctl_context[index].situation_ctl.batch == NULL) {
 			pr_err("batch() is NULL, %d\n", index);
@@ -449,22 +449,22 @@ static ssize_t situation_store_batch(struct device *dev,
 		}
 		if (cxt->ctl_context[index].situation_ctl.is_support_batch)
 			err = cxt->ctl_context[index].situation_ctl.batch(0,
-				cxt->ctl_context[index].delay_ns,
-				cxt->ctl_context[index].latency_ns);
-		else
-			err = cxt->ctl_context[index].situation_ctl.batch(0,
-				cxt->ctl_context[index].delay_ns, 0);
-		if (err) {
-			pr_err("situation set batch(ODR) err %d\n", err);
-			goto err_out;
-		}
+															  cxt->ctl_context[index].delay_ns,
+													 cxt->ctl_context[index].latency_ns);
+			else
+				err = cxt->ctl_context[index].situation_ctl.batch(0,
+																  cxt->ctl_context[index].delay_ns, 0);
+				if (err) {
+					pr_err("situation set batch(ODR) err %d\n", err);
+					goto err_out;
+				}
 	} else
 		pr_info("batch state no need change\n");
-#else
+	#else
 	err = situation_enable_and_batch(index);
-#endif
+	#endif
 	pr_debug("%s done\n", __func__);
-err_out:
+	err_out:
 	mutex_unlock(&situation_context_obj->situation_op_mutex);
 	if (err)
 		return err;
@@ -473,7 +473,7 @@ err_out:
 }
 
 static ssize_t situation_show_batch(struct device *dev,
-	struct device_attribute *attr, char *buf)
+									struct device_attribute *attr, char *buf)
 {
 	int len = 0;
 
@@ -482,7 +482,7 @@ static ssize_t situation_show_batch(struct device *dev,
 }
 
 static ssize_t situation_store_flush(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t count)
+									 struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct situation_context *cxt = NULL;
 	int index = -1, handle = 0, err = 0;
@@ -515,7 +515,7 @@ static ssize_t situation_store_flush(struct device *dev,
 }
 
 static ssize_t situation_show_flush(struct device *dev,
-	struct device_attribute *attr, char *buf)
+									struct device_attribute *attr, char *buf)
 {
 	int len = 0;
 
@@ -524,7 +524,7 @@ static ssize_t situation_show_flush(struct device *dev,
 }
 
 static ssize_t situation_show_devnum(struct device *dev,
-	struct device_attribute *attr, char *buf)
+									 struct device_attribute *attr, char *buf)
 {
 	return snprintf(buf, PAGE_SIZE, "%d\n", 0);	/* TODO: why +5? */
 }
@@ -534,18 +534,18 @@ static int situation_real_driver_init(void)
 {
 	int err = -1, i = 0;
 
-	pr_debug("%s start\n", __func__);
+	pr_err("vts_dbg: situation_real_driver_init start\n");
 
 	for (i = 0; i < max_situation_support; i++) {
 		if (situation_init_list[i] != NULL) {
-			pr_debug(" situ try to init driver %s\n",
-				situation_init_list[i]->name);
+			pr_err("vts_dbg: situ try to init driver %s (index %d)\n",
+				   situation_init_list[i]->name, i);
 			err = situation_init_list[i]->init();
 			if (err == 0)
-				pr_debug(" situ real driver %s probe ok\n",
-				situation_init_list[i]->name);
+				pr_err(" situ real driver %s probe ok\n",
+					   situation_init_list[i]->name);
 		} else
-			continue;
+			pr_err("vts_dbg: index %d empty at real_driver_init time\n", i);
 	}
 	return err;
 }
@@ -556,11 +556,11 @@ int situation_driver_add(struct situation_init_info *obj, int handle)
 	int err = 0;
 	int index = -1;
 
-	pr_debug("register situation handle=%d\n", handle);
+	pr_err("register situation handle=%d\n", handle);
 
 	if (!obj) {
 		pr_err("[%s] fail, situation_init_info is NULL\n",
-			__func__);
+			   __func__);
 		return -1;
 	}
 
@@ -583,12 +583,12 @@ static int situation_open(struct inode *inode, struct file *file)
 }
 
 static ssize_t situation_read(struct file *file, char __user *buffer,
-			  size_t count, loff_t *ppos)
+							  size_t count, loff_t *ppos)
 {
 	ssize_t read_cnt = 0;
 
 	read_cnt = sensor_event_read(situation_context_obj->mdev.minor,
-		file, buffer, count, ppos);
+								 file, buffer, count, ppos);
 
 	return read_cnt;
 }
@@ -620,7 +620,7 @@ static int situation_misc_init(struct situation_context *cxt)
 }
 
 DEVICE_ATTR(situactive, 0644,
-	situation_show_active, situation_store_active);
+			situation_show_active, situation_store_active);
 DEVICE_ATTR(situbatch, 0644, situation_show_batch, situation_store_batch);
 DEVICE_ATTR(situflush, 0644, situation_show_flush, situation_store_flush);
 DEVICE_ATTR(situdevnum, 0644, situation_show_devnum, NULL);
@@ -639,7 +639,7 @@ static struct attribute_group situation_attribute_group = {
 };
 
 int situation_register_data_path(struct situation_data_path *data,
-	int handle)
+								 int handle)
 {
 	struct situation_context *cxt = NULL;
 	int index = -1;
@@ -661,7 +661,7 @@ int situation_register_data_path(struct situation_data_path *data,
 }
 
 int situation_register_control_path(struct situation_control_path *ctl,
-	int handle)
+									int handle)
 {
 	struct situation_context *cxt = NULL;
 	int index = -1;
@@ -679,13 +679,13 @@ int situation_register_control_path(struct situation_control_path *ctl,
 	}
 	cxt = situation_context_obj;
 	cxt->ctl_context[index].situation_ctl.open_report_data =
-		ctl->open_report_data;
+	ctl->open_report_data;
 	cxt->ctl_context[index].situation_ctl.batch = ctl->batch;
 	cxt->ctl_context[index].situation_ctl.flush = ctl->flush;
 	cxt->ctl_context[index].situation_ctl.is_support_wake_lock =
-		ctl->is_support_wake_lock;
+	ctl->is_support_wake_lock;
 	cxt->ctl_context[index].situation_ctl.is_support_batch =
-		ctl->is_support_batch;
+	ctl->is_support_batch;
 
 	cxt->wake_lock_name[index] = kzalloc(64, GFP_KERNEL);
 	if (!cxt->wake_lock_name[index])
@@ -722,21 +722,21 @@ static int situation_probe(void)
 		goto real_driver_init_fail;
 	}
 	err = sysfs_create_group(&situation_context_obj->mdev.this_device->kobj,
-		&situation_attribute_group);
+							 &situation_attribute_group);
 	if (err < 0) {
 		pr_err("unable to create situ attribute file\n");
 		goto real_driver_init_fail;
 	}
 	kobject_uevent(&situation_context_obj->mdev.this_device->kobj,
-		KOBJ_ADD);
+				   KOBJ_ADD);
 
 
 	pr_debug("%s OK !!\n", __func__);
 	return 0;
 
-real_driver_init_fail:
+	real_driver_init_fail:
 	kfree(situation_context_obj);
-exit_alloc_data_failed:
+	exit_alloc_data_failed:
 	pr_debug("%s fail !!!\n", __func__);
 	return err;
 }
@@ -747,7 +747,7 @@ static int situation_remove(void)
 
 	pr_debug("%s\n", __func__);
 	sysfs_remove_group(&situation_context_obj->mdev.this_device->kobj,
-		&situation_attribute_group);
+					   &situation_attribute_group);
 
 	err = sensor_attr_deregister(&situation_context_obj->mdev);
 	if (err)

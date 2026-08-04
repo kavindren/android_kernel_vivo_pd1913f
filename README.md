@@ -39,9 +39,10 @@ This project is focused on updating security components and adding more tools (K
   - [x] RIL, Wi-Fi, Bluetooth
   - [x] USB & MTP
   - [x] Fingerprint
+  - [x] Camera
 - **In progress (Known issues):**
   - [ ] **NFC**
-  - [ ] **Camera**
+  - [ ] **Flashlight**
   - [ ] **vivo FlashCharge** - impossible due to missing vivo drivers
 
 ---

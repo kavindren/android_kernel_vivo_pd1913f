@@ -3380,6 +3380,57 @@ defined(CONFIG_MTK_CAM_SECURITY_SUPPORT)
 			"CLK_TOP_CAMTM_SEL_CG",
 			"CLK_TOP_CAMTM_208_CG",
 			"CLK_SCP_SYS_CAM";
+
+		/* Camera sensor power/reset/mclk pins, extracted from stock dtbo.img (fragment@14) */
+		pinctrl-names = "default",
+			"cam0_rst0", "cam0_rst1",
+			"cam1_rst0", "cam1_rst1",
+			"cam2_pnd0", "cam2_pnd1",
+			"cam4_rst0", "cam4_rst1",
+			"cam0_vcama_on", "cam0_vcama_off",
+			"cam1_vcama_on", "cam1_vcama_off",
+			"cam0_mclk_off", "cam0_mclk_2mA", "cam0_mclk_4mA",
+			"cam0_mclk_6mA", "cam0_mclk_8mA",
+			"cam1_mclk_off", "cam1_mclk_2mA", "cam1_mclk_4mA",
+			"cam1_mclk_6mA", "cam1_mclk_8mA",
+			"cam2_mclk_off", "cam2_mclk_2mA", "cam2_mclk_4mA",
+			"cam2_mclk_6mA", "cam2_mclk_8mA",
+			"cam4_mclk_off", "cam4_mclk_2mA", "cam4_mclk_4mA",
+			"cam4_mclk_6mA", "cam4_mclk_8mA";
+		pinctrl-0 = <&camera_pins_default>;
+		pinctrl-1 = <&camera0_rst_low>;
+		pinctrl-2 = <&camera0_rst_high>;
+		pinctrl-3 = <&camera1_rst_low>;
+		pinctrl-4 = <&camera1_rst_high>;
+		pinctrl-5 = <&camera2_pdn_low>;
+		pinctrl-6 = <&camera2_pdn_high>;
+		pinctrl-7 = <&camera4_rst_low>;
+		pinctrl-8 = <&camera4_rst_high>;
+		pinctrl-9 = <&camera0_vcama_on>;
+		pinctrl-10 = <&camera0_vcama_off>;
+		pinctrl-11 = <&camera1_vcama_on>;
+		pinctrl-12 = <&camera1_vcama_off>;
+		pinctrl-13 = <&camera0_mclk_off>;
+		pinctrl-14 = <&camera0_mclk_2mA>;
+		pinctrl-15 = <&camera0_mclk_4mA>;
+		pinctrl-16 = <&camera0_mclk_6mA>;
+		pinctrl-17 = <&camera0_mclk_8mA>;
+		pinctrl-18 = <&camera1_mclk_off>;
+		pinctrl-19 = <&camera1_mclk_2mA>;
+		pinctrl-20 = <&camera1_mclk_4mA>;
+		pinctrl-21 = <&camera1_mclk_6mA>;
+		pinctrl-22 = <&camera1_mclk_8mA>;
+		pinctrl-23 = <&camera2_mclk_off>;
+		pinctrl-24 = <&camera2_mclk_2mA>;
+		pinctrl-25 = <&camera2_mclk_4mA>;
+		pinctrl-26 = <&camera2_mclk_6mA>;
+		pinctrl-27 = <&camera2_mclk_8mA>;
+		pinctrl-28 = <&camera4_mclk_off>;
+		pinctrl-29 = <&camera4_mclk_2mA>;
+		pinctrl-30 = <&camera4_mclk_4mA>;
+		pinctrl-31 = <&camera4_mclk_6mA>;
+		pinctrl-32 = <&camera4_mclk_8mA>;
+		status = "okay";
 	};
 
 	flashlight_core: flashlight_core {
@@ -3792,6 +3843,234 @@ defined(CONFIG_MTK_CAM_SECURITY_SUPPORT)
 };
 
 &pio {
+	/* Camera sensor pins, extracted from stock dtbo.img (fragment@13) */
+	camera0_mclk_2mA: camera0_mclk_2mA@gpio100 {
+		pins_cmd_dat {
+			pinmux = <0x6401>;
+			drive-strength = <0x00>;
+		};
+	};
+
+	camera0_mclk_4mA: camera0_mclk_4mA@gpio100 {
+		pins_cmd_dat {
+			pinmux = <0x6401>;
+			drive-strength = <0x01>;
+		};
+	};
+
+	camera0_mclk_6mA: camera0_mclk_6mA@gpio100 {
+		pins_cmd_dat {
+			pinmux = <0x6401>;
+			drive-strength = <0x02>;
+		};
+	};
+
+	camera0_mclk_8mA: camera0_mclk_8mA@gpio100 {
+		pins_cmd_dat {
+			pinmux = <0x6401>;
+			drive-strength = <0x03>;
+		};
+	};
+
+	camera0_mclk_off: camera0_mclk_gpio_mode@gpio100 {
+		pins_cmd_dat {
+			pinmux = <0x6400>;
+			drive-strength = <0x00>;
+		};
+	};
+
+	camera1_mclk_2mA: camera1_mclk_2mA@gpio99 {
+		pins_cmd_dat {
+			pinmux = <0x6301>;
+			drive-strength = <0x00>;
+		};
+	};
+
+	camera1_mclk_4mA: camera1_mclk_4mA@gpio99 {
+		pins_cmd_dat {
+			pinmux = <0x6301>;
+			drive-strength = <0x01>;
+		};
+	};
+
+	camera1_mclk_6mA: camera1_mclk_6mA@gpio99 {
+		pins_cmd_dat {
+			pinmux = <0x6301>;
+			drive-strength = <0x02>;
+		};
+	};
+
+	camera1_mclk_8mA: camera1_mclk_8mA@gpio99 {
+		pins_cmd_dat {
+			pinmux = <0x6301>;
+			drive-strength = <0x03>;
+		};
+	};
+
+	camera1_mclk_off: camera1_mclk_gpio_mode@gpio99 {
+		pins_cmd_dat {
+			pinmux = <0x6300>;
+			drive-strength = <0x00>;
+		};
+	};
+
+	camera2_mclk_2mA: camera2_mclk_2mA@gpio111 {
+		pins_cmd_dat {
+			pinmux = <0x6f01>;
+			drive-strength = <0x00>;
+		};
+	};
+
+	camera2_mclk_4mA: camera2_mclk_4mA@gpio111 {
+		pins_cmd_dat {
+			pinmux = <0x6f01>;
+			drive-strength = <0x01>;
+		};
+	};
+
+	camera2_mclk_6mA: camera2_mclk_6mA@gpio111 {
+		pins_cmd_dat {
+			pinmux = <0x6f01>;
+			drive-strength = <0x02>;
+		};
+	};
+
+	camera2_mclk_8mA: camera2_mclk_8mA@gpio111 {
+		pins_cmd_dat {
+			pinmux = <0x6f01>;
+			drive-strength = <0x03>;
+		};
+	};
+
+	camera2_mclk_off: camera2_mclk_gpio_mode@gpio111 {
+		pins_cmd_dat {
+			pinmux = <0x6f00>;
+			drive-strength = <0x00>;
+		};
+	};
+
+	camera4_mclk_2mA: camera4_mclk_2mA@gpio108 {
+		pins_cmd_dat {
+			pinmux = <0x6c01>;
+			drive-strength = <0x00>;
+		};
+	};
+
+	camera4_mclk_4mA: camera4_mclk_4mA@gpio108 {
+		pins_cmd_dat {
+			pinmux = <0x6c01>;
+			drive-strength = <0x01>;
+		};
+	};
+
+	camera4_mclk_6mA: camera4_mclk_6mA@gpio108 {
+		pins_cmd_dat {
+			pinmux = <0x6c01>;
+			drive-strength = <0x02>;
+		};
+	};
+
+	camera4_mclk_8mA: camera4_mclk_8mA@gpio108 {
+		pins_cmd_dat {
+			pinmux = <0x6c01>;
+			drive-strength = <0x03>;
+		};
+	};
+
+	camera4_mclk_off: camera4_mclk_gpio_mode@gpio108 {
+		pins_cmd_dat {
+			pinmux = <0x6c00>;
+			drive-strength = <0x00>;
+		};
+	};
+
+	camera0_rst_low: camera0_rst_output_low@gpio102 {
+		pins_cmd_dat {
+			pinmux = <0x6600>;
+			output-low;
+		};
+	};
+
+	camera0_rst_high: camera0_rst_output_high@gpio102 {
+		pins_cmd_dat {
+			pinmux = <0x6600>;
+			output-high;
+		};
+	};
+
+	camera0_vcama_off: camera0_vcama_output_low@gpio160 {
+		pins_cmd_dat {
+			pinmux = <0xa000>;
+			output-low;
+		};
+	};
+
+	camera0_vcama_on: camera0_vcama_output_high@gpio160 {
+		pins_cmd_dat {
+			pinmux = <0xa000>;
+			output-high;
+		};
+	};
+
+	camera1_rst_low: camera1_rst_output_low@gpio101 {
+		pins_cmd_dat {
+			pinmux = <0x6500>;
+			output-low;
+		};
+	};
+
+	camera1_rst_high: camera1_rst_output_high@gpio101 {
+		pins_cmd_dat {
+			pinmux = <0x6500>;
+			output-high;
+		};
+	};
+
+	camera1_vcama_off: camera1_vcama_output_low@gpio160 {
+		pins_cmd_dat {
+			pinmux = <0xa000>;
+			output-low;
+		};
+	};
+
+	camera1_vcama_on: camera1_vcama_output_high@gpio160 {
+		pins_cmd_dat {
+			pinmux = <0xa000>;
+			output-high;
+		};
+	};
+
+	camera2_pdn_low: camera2_pdn_output_low@gpio112 {
+		pins_cmd_dat {
+			pinmux = <0x7000>;
+			output-low;
+		};
+	};
+
+	camera2_pdn_high: camera2_pdn_output_high@gpio112 {
+		pins_cmd_dat {
+			pinmux = <0x7000>;
+			output-high;
+		};
+	};
+
+	camera4_rst_low: camera4_rst_output_low@gpio109 {
+		pins_cmd_dat {
+			pinmux = <0x6d00>;
+			output-low;
+		};
+	};
+
+	camera4_rst_high: camera4_rst_output_high@gpio109 {
+		pins_cmd_dat {
+			pinmux = <0x6d00>;
+			output-high;
+		};
+	};
+
+	camera_pins_default: camdefault {
+	};
+
 	aud_clk_mosi_off: aud_clk_mosi_off {
 		pins_cmd0_dat {
 			pinmux = <PINMUX_GPIO136__FUNC_GPIO136>,

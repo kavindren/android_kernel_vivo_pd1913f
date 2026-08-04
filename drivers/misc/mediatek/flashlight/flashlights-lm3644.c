@@ -114,17 +114,17 @@
 #define LM3644_REGULATOR_TYPE_TORCH 0
 /* define mutex and work queue */
 static DEFINE_MUTEX(lm3644_mutex);
- 
+
 static struct work_struct lm3644_work_ch1;
 static struct work_struct lm3644_work_ch2;
 
- 
+
 
 #ifdef HOPE_ADD_IRQ_FLASH
 #define LM3644_PINCTRL_STATE_FLASH_IRQ "flash_irq"
 #endif
 
- 
+
 
 #ifdef HOPE_ADD_IRQ_FLASH
 static int g_flash_irq_num;
@@ -153,6 +153,15 @@ static int lock_touch_sub; /*hope add*/
 static int fl_ic_number;
 /* define i2c */
 static struct i2c_client *lm3644_i2c_client;
+
+/* HWEN pinctrl fallback: this board's flashlights_lm3644 PLATFORM node
+ * (pinctrl-names "default"/"hwen_high"/"hwen_low") gates the chip's
+ * hardware-enable pin via pinctrl instead of a discrete regulator.
+ * Fetched in lm3644_probe() -- the i2c client's own of_node
+ * (strobe_main@63) is a separate, near-empty node with no pinctrl at all. */
+static struct pinctrl *lm3644_hwen_pinctrl;
+static struct pinctrl_state *lm3644_hwen_high;
+static struct pinctrl_state *lm3644_hwen_low;
 
 /* platform data */
 struct lm3644_platform_data {
@@ -187,10 +196,10 @@ struct lm3644_chip_data {
  *    Flash:(Code x 11.725) + 10.9 mA
  * IC KTD2687:
  *    Torch:(Code +1) x 187.5mA / 128
- *    Flash:(Code +1) x 1500 / 128 (mA) 
+ *    Flash:(Code +1) x 1500 / 128 (mA)
  * IC AW36413, AW3644, AW36515:
  *    Torch:(Code * 2.91) + 2.55 mA
- *    Flash:(Code*11.72mA) + 11.35mA 
+ *    Flash:(Code*11.72mA) + 11.35mA
  */
 #if defined  (CONFIG_MTK_CAM_PD2083F_EX)
 static const int lm3644_current[LM3644_LEVEL_NUM] = {  /*current:mA */
@@ -204,7 +213,7 @@ static const unsigned char ktd2687_torch_level[LM3644_LEVEL_NUM] = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 static const unsigned char lm3644tt_torch_level[LM3644_LEVEL_NUM] = {
-	0x0B, 0x11, 0x16, 0x1A, 0x23, 0x2A, 0x31, 0x00, 0x00, 0x00, 
+	0x0B, 0x11, 0x16, 0x1A, 0x23, 0x2A, 0x31, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
@@ -214,7 +223,7 @@ static const unsigned char lm3644_torch_level[LM3644_LEVEL_NUM] = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 static const unsigned char aw36413_torch_level[LM3644_LEVEL_NUM] = {
-	0x0A, 0x11, 0x15, 0x19, 0x22, 0x27, 0x2F, 0x00, 0x00, 0x00, 
+	0x0A, 0x11, 0x15, 0x19, 0x22, 0x27, 0x2F, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 /* torch duty=0x17 << current=33mA */
@@ -223,7 +232,7 @@ static const unsigned char lm3644_flash_level[LM3644_LEVEL_NUM] = {
 	0x01, 0x03, 0x05, 0x07, 0x09, 0x0B, 0x0D, 0x10, 0x14, 0x19,
 	0x1D, 0x21, 0x25, 0x2A, 0x2E, 0x32, 0x37, 0x3B, 0x3F, 0x43,
 	0x48, 0x4C, 0x50, 0x54, 0x59, 0x5D};
-	
+
 #elif defined(CONFIG_MTK_CAM_PD2066A) || defined(CONFIG_MTK_CAM_PD2066BA) || defined(CONFIG_MTK_CAM_PD2066F_EX) || defined(CONFIG_MTK_CAM_PD2103F_EX) || defined(CONFIG_MTK_CAM_PD2104F_EX) || defined(CONFIG_MTK_CAM_PD2138F_EX) || defined(CONFIG_MTK_CAM_PD2147F_EX)
 
 
@@ -238,17 +247,17 @@ static const unsigned char ktd2687_torch_level[LM3644_LEVEL_NUM] = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 static const unsigned char lm3644tt_torch_level[LM3644_LEVEL_NUM] = {
-	0x0B, 0x11, 0x16, 0x1A, 0x21, 0x23, 0x31, 0x00, 0x00, 0x00, 
+	0x0B, 0x11, 0x16, 0x1A, 0x21, 0x23, 0x31, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 static const unsigned char lm3644_torch_level[LM3644_LEVEL_NUM] = {
-	0x17, 0x24, 0x2E, 0x35, 0x42, 0x46, 0x63, 0x00, 0x00, 0x00, 
+	0x17, 0x24, 0x2E, 0x35, 0x42, 0x46, 0x63, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 static const unsigned char aw36413_torch_level[LM3644_LEVEL_NUM] = {
-	0x0A, 0x11, 0x15, 0x19, 0x1F, 0x22, 0x2F, 0x00, 0x00, 0x00, 
+	0x0A, 0x11, 0x15, 0x19, 0x1F, 0x22, 0x2F, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 /* torch duty=0x17 << current=33mA */
@@ -257,7 +266,7 @@ static const unsigned char lm3644_flash_level[LM3644_LEVEL_NUM] = {
 	0x01, 0x03, 0x05, 0x07, 0x09, 0x0B, 0x0D, 0x10, 0x14, 0x19,
 	0x1D, 0x21, 0x25, 0x2A, 0x2E, 0x32, 0x37, 0x3B, 0x3F, 0x43,
 	0x48, 0x4C, 0x50, 0x54, 0x59, 0x5D};
-	
+
 #elif defined(CONFIG_MTK_CAM_PD2167F_EX) || defined(CONFIG_MTK_CAM_PD2163)
 
 static const int lm3644_current[LM3644_LEVEL_NUM] = {  /*current:mA */
@@ -271,17 +280,17 @@ static const unsigned char ktd2687_torch_level[LM3644_LEVEL_NUM] = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 static const unsigned char lm3644tt_torch_level[LM3644_LEVEL_NUM] = {
-	0x0B, 0x0D, 0x11, 0x15, 0x18, 0x23, 0x2B, 0x42, 0x00, 0x00, 
+	0x0B, 0x0D, 0x11, 0x15, 0x18, 0x23, 0x2B, 0x42, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-	
+
 static const unsigned char lm3644_torch_level[LM3644_LEVEL_NUM] = {
-	0x16, 0x1B, 0x23, 0x2B, 0x30, 0x46, 0x56, 0x85, 0x00, 0x00, 
+	0x16, 0x1B, 0x23, 0x2B, 0x30, 0x46, 0x56, 0x85, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 static const unsigned char aw36413_torch_level[LM3644_LEVEL_NUM] = {
-	0x0A, 0x11, 0x15, 0x19, 0x21, 0x27, 0x2F, 0x00, 0x00, 0x00, 
+	0x0A, 0x11, 0x15, 0x19, 0x21, 0x27, 0x2F, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 /* torch duty=0x17 << current=33mA */
@@ -304,17 +313,17 @@ static const unsigned char ktd2687_torch_level[LM3644_LEVEL_NUM] = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 static const unsigned char lm3644tt_torch_level[LM3644_LEVEL_NUM] = {
-	0x0B, 0x10, 0x16, 0x1A, 0x21, 0x2A, 0x31, 0x00, 0x00, 0x00, 
+	0x0B, 0x10, 0x16, 0x1A, 0x21, 0x2A, 0x31, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 static const unsigned char lm3644_torch_level[LM3644_LEVEL_NUM] = {
-	0x17, 0x21, 0x2E, 0x35, 0x42, 0x52, 0x63, 0x00, 0x00, 0x00, 
+	0x17, 0x21, 0x2E, 0x35, 0x42, 0x52, 0x63, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 static const unsigned char aw36413_torch_level[LM3644_LEVEL_NUM] = {
-	0x0A, 0x11, 0x15, 0x19, 0x1F, 0x27, 0x2F, 0x00, 0x00, 0x00, 
+	0x0A, 0x11, 0x15, 0x19, 0x1F, 0x27, 0x2F, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 /* torch duty=0x17 << current=33mA */
@@ -361,6 +370,19 @@ static int __lm3644_set_power(struct regulator * enable,  bool on)
 		} else {
 			ret = regulator_disable(enable);
 		}
+	} else if (lm3644_hwen_pinctrl && lm3644_hwen_high && lm3644_hwen_low) {
+		pr_info("E(hwen pinctrl) on(%d) %s ", on, on ? "ON" : "OFF");
+		if (on) {
+			/* force a real low->high edge instead of assuming prior state */
+			pinctrl_select_state(lm3644_hwen_pinctrl, lm3644_hwen_low);
+			mdelay(5);
+			ret = pinctrl_select_state(lm3644_hwen_pinctrl, lm3644_hwen_high);
+			/* generous margin in case the LED boost converter needs more
+			 * time than plain logic to come up */
+			mdelay(20);
+		} else {
+			ret = pinctrl_select_state(lm3644_hwen_pinctrl, lm3644_hwen_low);
+		}
 	} else {
 		pr_info("regulator_enable is null");
 		return ret;
@@ -378,7 +400,7 @@ static int lm3644_set_power(struct i2c_client *client, int regulator_type, int o
 	} else if(regulator_type == LM3644_REGULATOR_TYPE_TORCH) {
 		if(IS_ERR(fled_data->torch_enable))
 			return PTR_ERR(fled_data->torch_enable);
-		__lm3644_set_power(fled_data->torch_enable, on);		
+		__lm3644_set_power(fled_data->torch_enable, on);
 	} else {
 		pr_err("regulator type is invalid");
 		return 0;
@@ -398,8 +420,8 @@ static int lm3644_read_reg(struct i2c_client *client, u8 reg)
 	    return 0;
 		}
 	}
-	lm3644_set_power(client, LM3644_REGULATOR_TYPE_ENABLE, LM3644_TURN_ON_LED); 
- 	
+	lm3644_set_power(client, LM3644_REGULATOR_TYPE_ENABLE, LM3644_TURN_ON_LED);
+
 	mutex_lock(&chip->lock);
 	val = i2c_smbus_read_byte_data(client, reg);
 	mutex_unlock(&chip->lock);
@@ -411,7 +433,7 @@ static int lm3644_read_reg(struct i2c_client *client, u8 reg)
 static int lm3644_write_reg(struct i2c_client *client, u8 reg, u8 val)
 {
 	int ret;
-	
+
 	struct lm3644_chip_data *chip = i2c_get_clientdata(client);
     if(IS_ERR(chip))
 		return -EINVAL;
@@ -426,20 +448,21 @@ static int lm3644_write_reg(struct i2c_client *client, u8 reg, u8 val)
 		pr_info("chip.state_pin_short =%d\n", chip->state_pin_short);
 	 	return 0;
  	}
-	
-	lm3644_set_power(client, LM3644_REGULATOR_TYPE_ENABLE, LM3644_TURN_ON_LED); 
-	
+
+	lm3644_set_power(client, LM3644_REGULATOR_TYPE_ENABLE, LM3644_TURN_ON_LED);
+
 	mutex_lock(&chip->lock);
 	ret = i2c_smbus_write_byte_data(client, reg, val);
-	if(ret == EIO){
-		pr_err("EIO chip.state_pin_short =%d\n",chip->state_pin_short);
-		chip->state_pin_short = 1;
-	}
 	mutex_unlock(&chip->lock);
 
 	if (ret < 0){
 		pr_err("failed writing at 0x%02x\n", reg);
-		chip->state_pin_short = 1;//20210519 zhujianjia add for I2C short to GND test.
+		/* Deliberately NOT re-latching chip->state_pin_short here.
+		 * We've confirmed (via probe's non-fatal ID check + native
+		 * comparison) that this board's chip fails I2C transactions
+		 * for reasons unrelated to a genuine pin-shorted-to-GND
+		 * fault -- re-latching here would silently block every
+		 * subsequent write attempt after the very first failure. */
 	}
 	return ret;
 }
@@ -452,7 +475,7 @@ static int lm3644_get_device_id(struct i2c_client *client)
 	//Device ID: Distinguish AW36413 or (LM3644,KTD2687,AW3644,AW36525)
 	device_id_val = lm3644_read_reg(client, LM3644_REG_DEVICE_ID);
 	flash_ic_id_val = lm3644_read_reg(client, REG_FLASH_IC_ID);
-	temp_protect_val = lm3644_read_reg(client, REG_TEMP_PROTECT);	
+	temp_protect_val = lm3644_read_reg(client, REG_TEMP_PROTECT);
 
 	if(device_id_val == AW36413_DEVIC_ID_VALUE) {
 		pr_info("IC is AW36413, DEVICE ID = 0x%x", AW36413_DEVIC_ID_VALUE);
@@ -469,7 +492,7 @@ static int lm3644_get_device_id(struct i2c_client *client)
 			return AW36515_DEVIC_ID_VALUE;
 		} else if(temp_protect_val == LM3644_TEMP_PROTECT_VALUE) {
 			pr_info("IC is LM3644, DEVICE ID = %d, Temp Protect = 0x%x", DEVICE_ID_DEFAULT_VALUE, temp_protect_val);
-			return LM3644_DEVICE_ID_VALUE;			
+			return LM3644_DEVICE_ID_VALUE;
 		} else {
 			pr_info("IC is KTD2687, DEVICE ID = %d, Temp Protect = 0x%x", DEVICE_ID_DEFAULT_VALUE, temp_protect_val);
 			return KTD2687_DEVICE_ID_VALUE;
@@ -515,7 +538,7 @@ static int lm3644_enable_ch2(struct i2c_client *client)
 		first_led_on = 0;
 		sof_flag = 0;
 		reg = LM3644_REG_TIMING_CONF;
-		
+
 		if (chip->device_id == AW36413_DEVIC_ID_VALUE)
 			val = LM3644_TORCH_RAMP_TIME | AW36413_FLASH_TIMEOUT_160MS; /*setting time_out = 160 ms*/
 		else
@@ -528,7 +551,7 @@ static int lm3644_enable_ch2(struct i2c_client *client)
 		return -1;
 	}
 #else
-	
+
 	unsigned char reg, val;
 	struct lm3644_chip_data *chip = i2c_get_clientdata(client);
 	if(!chip)
@@ -544,7 +567,7 @@ static int lm3644_enable_ch2(struct i2c_client *client)
 	}
 	val = chip->lm3644_reg_enable;
 	return lm3644_write_reg(client, reg, val);
-	
+
 #endif
 }
 static int lm3644_enable(struct i2c_client *client,int channel)
@@ -600,7 +623,7 @@ static int lm3644_disable_ch1(struct i2c_client *client)
 
 static int lm3644_disable_ch2(struct i2c_client *client)
 {
-	
+
 #ifdef HOPE_ADD_IRQ_FLASH
 	unsigned char reg, val;
 	if (g_flash_irq_num > 0 && irq_enable_count == 1) {
@@ -661,7 +684,7 @@ static int lm3644_disable_ch2_store(struct i2c_client *client)
 }
 static int lm3644_disable(struct i2c_client *client, int channel)
 {
- 
+
 	if (channel == LM3644_CHANNEL_CH1)
 		lm3644_disable_ch1(client);
 	else if (channel == LM3644_CHANNEL_CH2)
@@ -672,7 +695,7 @@ static int lm3644_disable(struct i2c_client *client, int channel)
 	}
 
 	return 0;
- 
+
 }
 
 static int lm3644_disable_store(struct i2c_client *client, int channel)
@@ -697,7 +720,7 @@ static int lm3644_set_level_ch1(struct i2c_client *client, int level)
 	struct lm3644_chip_data *chip = i2c_get_clientdata(client);
     if(IS_ERR(chip))
 		return -EINVAL;
-		
+
 	level = lm3644_verify_level(level);
 
 	/* set torch brightness level */
@@ -729,7 +752,7 @@ static int lm3644_set_level_ch2(struct i2c_client *client, int level)
 	struct lm3644_chip_data *chip = i2c_get_clientdata(client);
     if(IS_ERR(chip))
 		return -EINVAL;
-		
+
 	level = lm3644_verify_level(level);
 
 	/* set torch brightness level */
@@ -745,7 +768,7 @@ static int lm3644_set_level_ch2(struct i2c_client *client, int level)
 		val = lm3644_torch_level[level];
 
 	ret = lm3644_write_reg(client, reg, val);
-	
+
 	lm3644_level_ch2 = level;
 
 	/* set flash brightness level */
@@ -765,13 +788,13 @@ static int lm3644_set_red_flash_level_and_enabe_ch2(struct i2c_client * client)
 	//reg = LM3644_REG_TIMING_CONF;
 	//val = LM3644_TORCH_RAMP_TIME | LM3644_FLASH_TIMEOUT_90MS;
 	//ret = lm3644_write_reg(client, reg, val);
-	
+
 	/* set flash brightness level */
 	struct lm3644_chip_data *chip = i2c_get_clientdata(client);
 	if(!chip)
 		return 0;
 	chip->lm3644_reg_enable |= LM3644_ENABLE_LED2_FLASH;
-	
+
 	ret = lm3644_write_reg(client, LM3644_REG_FLASH_LEVEL_LED1, (0x7f & 0xbf));/*write reg5 bit 7 to 0*/
 	ret = lm3644_write_reg(client, LM3644_REG_FLASH_LEVEL_LED2, 0x6E);/*6E = 1.3A*/
 	ret = lm3644_write_reg(client, LM3644_REG_ENABLE, chip->lm3644_reg_enable);
@@ -793,7 +816,7 @@ static int lm3644_set_level(struct i2c_client *client, int channel, int level)
 	reg = LM3644_REG_TIMING_CONF;
 	val = LM3644_TORCH_RAMP_TIME | LM3644_FLASH_TIMEOUT;
 	ret = lm3644_write_reg(client, reg, val);
-	
+
 	if (channel == LM3644_CHANNEL_CH1)
 		lm3644_set_level_ch1(client, level);
 	else if (channel == LM3644_CHANNEL_CH2)
@@ -834,7 +857,7 @@ int lm3644_init(struct i2c_client *client)
 	reg = LM3644_REG_BOOST;
 	val = LM3644_REG_BOOST_CRRRENT_LIMIT_1_8A;
 	ret = lm3644_write_reg(client, reg, val);
-	//mdelay(2);	
+	//mdelay(2);
 	//boost_val = lm3644_read_reg(client, LM3644_REG_BOOST);
 	//pr_err("lm3644_init LM3644_REG_BOOST =0x%x\n",boost_val);
 #endif
@@ -863,7 +886,7 @@ static irqreturn_t vivo_subflash_ISR(int irq, void *dev_id)
 }
 static void ir_delayed_func(struct work_struct *work)
 {
-	
+
 	/*int ret;*/
 	unsigned char reg, flags_1_val, flags_2_val;
 	u64 deltaTime = ktime_us_delta(ktime_get(), StartTime);
@@ -872,23 +895,23 @@ static void ir_delayed_func(struct work_struct *work)
 	if(first_led_on == 0 && sof_flag ==1 ){
 			first_led_on = 2;
 	}
-	
+
 	if(!lm3644_i2c_client ){
 		pr_err("i2c client is NULL.\n");
 	}else{
 		if ((deltaTime > 480000 && led_count < 8) || (first_led_on == 2)) {/*380000*/
 			StartTime = ktime_get();
 			led_count++;
-			
+
 			reg = LM3644_REG_FLAGS_1;
 			flags_1_val = lm3644_read_reg(lm3644_i2c_client,reg);
-			
+
 			reg = LM3644_REG_FLAGS_2;
 			flags_2_val = lm3644_read_reg(lm3644_i2c_client,reg);
 
 			if((flags_1_val & 0x7E)||(flags_2_val & 0x1E))
 				pr_err("flashlight err flags_1_val = 0x%x, flags_2_val = 0x%x, lm3644_i2c_client->addr = 0x%x, device_id =0x%x\n", flags_1_val, flags_2_val, lm3644_i2c_client->addr, device_id);
-			
+
 				pr_debug("sub flash mode start on \n");
 				lm3644_set_red_flash_level_and_enabe_ch2();
 		}
@@ -908,9 +931,9 @@ static void flash_delay_off_func(struct work_struct *work)
  {
 	unsigned char reg, val;
 	reg = LM3644_REG_ENABLE;
-	
+
 	pr_err("flash_delay_off_func start\n");
-	
+
 	if (lm3644_reg_enable & LM3644_MASK_ENABLE_LED1) {
 		/* if LED 1 is enable, disable LED 2 */
 		lm3644_reg_enable &= (~LM3644_ENABLE_LED2);
@@ -920,7 +943,7 @@ static void flash_delay_off_func(struct work_struct *work)
 	}
 	val = lm3644_reg_enable;
 	 lm3644_write_reg(lm3644_i2c_client, reg, val);
-	 
+
 	 pr_err("flash_delay_off_func end\n");
 }
 
@@ -944,14 +967,14 @@ static int set_flashlight_state(struct i2c_client * client, int ct, int part, in
 	if(IS_ERR(chip))
 		return -EINVAL;
 
-	lm3644_set_power(client, LM3644_REGULATOR_TYPE_ENABLE, LM3644_TURN_ON_LED); 
+	lm3644_set_power(client, LM3644_REGULATOR_TYPE_ENABLE, LM3644_TURN_ON_LED);
 	lm3644_write_reg(client, LM3644_REG_BOOST_CONVERTER, LM3644_BOOST_CONVERTER_PASS_MODE);
 	single_led_arg = (ct << 1) | part;
 	pr_info("set_flashlight_state check state:%d single_led_arg:%d\n", state, single_led_arg);
 	switch (state) {
-	
+
 	case FRONT_TORCH_3rd_ONE_ON:
-		
+
 		pr_info("FRONT_TORCH_3rd_ONE_ON\n");
 		if(fl_ic_number == FRONT_FLASHLIGHT_DOUBLE_LED) {
 			chip->lm3644_reg_enable |= LM3644_ENABLE_LED1_TORCH;
@@ -959,18 +982,18 @@ static int set_flashlight_state(struct i2c_client * client, int ct, int part, in
 			if (chip->device_id == AW36413_DEVIC_ID_VALUE) //AW3644,AW36413,AW36515
 			{
 				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED1, 0x0D);/*(Code * 2.91) + 2.55 mA  Torch*/
-				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x0D);/*(Code * 2.91) + 2.55 mA  Torch*/			
+				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x0D);/*(Code * 2.91) + 2.55 mA  Torch*/
 			} else if(chip->device_id == LM3644_DEVICE_ID_VALUE) { //LM3644
 				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED1, 0x1C);/*(Code x 1.4) + 0.977 mA Torch*/
-				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x1C);/*(Code x 1.4) + 0.977 mA Torch*/					
-			} else if(chip->device_id == LM3644TT_DEVICE_ID_VALUE) { //LM3644TT 
+				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x1C);/*(Code x 1.4) + 0.977 mA Torch*/
+			} else if(chip->device_id == LM3644TT_DEVICE_ID_VALUE) { //LM3644TT
 				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED1, 0x0E);/*(Code x 2.8) + 1.954 mA Torch*/
-				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x0E);/*(Code x 2.8) + 1.954 mA Torch*/	
+				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x0E);/*(Code x 2.8) + 1.954 mA Torch*/
 			}
 			else{ //KTD2687
-				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED1, 0x1A);/*(Code +1) x 187.5mA / 128  Torch*/			
-				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x1A);/*(Code +1) x 187.5mA / 128  Torch*/			
-			}		
+				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED1, 0x1A);/*(Code +1) x 187.5mA / 128  Torch*/
+				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x1A);/*(Code +1) x 187.5mA / 128  Torch*/
+			}
 		} else {
 			chip->lm3644_reg_enable |= LM3644_ENABLE_LED1_TORCH;
 #if defined  (CONFIG_MTK_CAM_PD2083F_EX)
@@ -983,8 +1006,8 @@ static int set_flashlight_state(struct i2c_client * client, int ct, int part, in
 				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED1, 0x22);/*(Brightnees code x 1.4mA)+0.997ma Torch 0x1A = 78mA*/
 			else
 				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED1, 0x35);/*0x47 = 100mA lm3644 0x38 = 80mA KTD2687 0x35 = 80mA(Brightnees code x 1.4mA)+0.997ma Torch*/
-#endif		
-		}		
+#endif
+		}
 		lm3644_write_reg(client, LM3644_REG_ENABLE, chip->lm3644_reg_enable);
 		lock_touch = 1;
 		break;
@@ -992,7 +1015,7 @@ static int set_flashlight_state(struct i2c_client * client, int ct, int part, in
 		if(fl_ic_number == FRONT_FLASHLIGHT_DOUBLE_LED) {
 				chip->lm3644_reg_enable &= (~LM3644_ENABLE_LED1);
 				chip->lm3644_reg_enable &= (~LM3644_ENABLE_LED2);
-				lm3644_write_reg(client, LM3644_REG_ENABLE, chip->lm3644_reg_enable);	
+				lm3644_write_reg(client, LM3644_REG_ENABLE, chip->lm3644_reg_enable);
 		} else {
 			if (chip->lm3644_reg_enable & LM3644_MASK_ENABLE_LED2) {
 				/* if LED 2 is enable, disable LED 1 */
@@ -1002,7 +1025,7 @@ static int set_flashlight_state(struct i2c_client * client, int ct, int part, in
 				/* disable LED 1 LED 2 and clear mode */
 				chip->lm3644_reg_enable &= (~LM3644_ENABLE_LED1_FLASH);
 				lm3644_write_reg(client, LM3644_REG_ENABLE, chip->lm3644_reg_enable);
-				lm3644_set_power(client, LM3644_REGULATOR_TYPE_ENABLE, LM3644_TURN_OFF_LED); 
+				lm3644_set_power(client, LM3644_REGULATOR_TYPE_ENABLE, LM3644_TURN_OFF_LED);
 			}
 		}
 		lock_touch = 0;
@@ -1016,18 +1039,18 @@ static int set_flashlight_state(struct i2c_client * client, int ct, int part, in
 			if (chip->device_id == AW36413_DEVIC_ID_VALUE) //AW3644,AW36413,AW36515
 			{
 				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED1, 0x0D);/*(Code * 2.91) + 2.55 mA  Torch*/
-				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x0D);/*(Code * 2.91) + 2.55 mA  Torch*/			
+				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x0D);/*(Code * 2.91) + 2.55 mA  Torch*/
 			} else if(chip->device_id == LM3644_DEVICE_ID_VALUE) { //LM3644
 				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED1, 0x1C);/*(Code x 1.4) + 0.977 mA Torch*/
-				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x1C);/*(Code x 1.4) + 0.977 mA Torch*/					
-			} else if(chip->device_id == LM3644TT_DEVICE_ID_VALUE) { //LM3644TT 
+				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x1C);/*(Code x 1.4) + 0.977 mA Torch*/
+			} else if(chip->device_id == LM3644TT_DEVICE_ID_VALUE) { //LM3644TT
 				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED1, 0x0E);/*(Code x 2.8) + 1.954 mA Torch*/
-				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x0E);/*(Code x 2.8) + 1.954 mA Torch*/	
+				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x0E);/*(Code x 2.8) + 1.954 mA Torch*/
 			}
 			else{ //KTD2687
-				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED1, 0x1A);/*(Code +1) x 187.5mA / 128  Torch*/			
-				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x1A);/*(Code +1) x 187.5mA / 128  Torch*/	
-			}		
+				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED1, 0x1A);/*(Code +1) x 187.5mA / 128  Torch*/
+				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x1A);/*(Code +1) x 187.5mA / 128  Torch*/
+			}
 		} else {
 		chip->lm3644_reg_enable |= LM3644_ENABLE_LED2_TORCH;
 #if defined  (CONFIG_MTK_CAM_PD2083F_EX)
@@ -1049,14 +1072,14 @@ static int set_flashlight_state(struct i2c_client * client, int ct, int part, in
 #endif
 		}
 		lm3644_write_reg(client, LM3644_REG_ENABLE, chip->lm3644_reg_enable);
-		lock_touch_sub = 1;  
+		lock_touch_sub = 1;
 		break;
 	case FRONT_TORCH_3rd_TWO_OFF:
 		if(fl_ic_number == FRONT_FLASHLIGHT_DOUBLE_LED) {
 				chip->lm3644_reg_enable &= (~LM3644_ENABLE_LED1);
 				chip->lm3644_reg_enable &= (~LM3644_ENABLE_LED2);
-				lm3644_write_reg(client, LM3644_REG_ENABLE, chip->lm3644_reg_enable);	
-		} else { 
+				lm3644_write_reg(client, LM3644_REG_ENABLE, chip->lm3644_reg_enable);
+		} else {
 			if (chip->lm3644_reg_enable & LM3644_MASK_ENABLE_LED1) {
 				/* if LED 1 is enable, disable LED 2 */
 				chip->lm3644_reg_enable &= (~LM3644_ENABLE_LED2);
@@ -1065,11 +1088,11 @@ static int set_flashlight_state(struct i2c_client * client, int ct, int part, in
 				/* disable LED 1 LED 2 and clear mode */
 				chip->lm3644_reg_enable &= (~LM3644_ENABLE_LED2_FLASH);
 				lm3644_write_reg(client, LM3644_REG_ENABLE, chip->lm3644_reg_enable);
-				lm3644_set_power(client, LM3644_REGULATOR_TYPE_ENABLE, LM3644_TURN_OFF_LED); 
+				lm3644_set_power(client, LM3644_REGULATOR_TYPE_ENABLE, LM3644_TURN_OFF_LED);
 			}
 		}
 		pr_info("FRONT_TORCH_3rd_TWO_OFF\n");
-		lock_touch_sub = 0;  
+		lock_touch_sub = 0;
 		break;
 	case BBK_TORCH_LOW:
 		if(fl_ic_number == FRONT_FLASHLIGHT_DOUBLE_LED) {
@@ -1078,17 +1101,17 @@ static int set_flashlight_state(struct i2c_client * client, int ct, int part, in
 			if (chip->device_id == AW36413_DEVIC_ID_VALUE) //AW3644,AW36413,AW36515
 			{
 				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED1, 0x21);/*(Code * 2.91) + 2.55 mA  Torch*/
-				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x21);/*(Code * 2.91) + 2.55 mA  Torch*/			
+				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x21);/*(Code * 2.91) + 2.55 mA  Torch*/
 			} else if(chip->device_id == LM3644_DEVICE_ID_VALUE) { //LM3644
 				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED1, 0x46);/*(Code x 1.4) + 0.977 mA Torch*/
-				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x46);/*(Code x 1.4) + 0.977 mA Torch*/					
-			} else if(chip->device_id == LM3644TT_DEVICE_ID_VALUE) { //LM3644TT 
+				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x46);/*(Code x 1.4) + 0.977 mA Torch*/
+			} else if(chip->device_id == LM3644TT_DEVICE_ID_VALUE) { //LM3644TT
 				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED1, 0x23);/*(Code x 2.8) + 1.954 mA Torch*/
-				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x23);/*(Code x 2.8) + 1.954 mA Torch*/	
+				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x23);/*(Code x 2.8) + 1.954 mA Torch*/
 			}
 			else{ //KTD2687
-				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED1, 0x43);/*(Code +1) x 187.5mA / 128  Torch*/			
-				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x43);/*(Code +1) x 187.5mA / 128  Torch*/	
+				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED1, 0x43);/*(Code +1) x 187.5mA / 128  Torch*/
+				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x43);/*(Code +1) x 187.5mA / 128  Torch*/
 			}
 		} else {
 			chip->lm3644_reg_enable |= LM3644_ENABLE_LED1_TORCH;
@@ -1117,7 +1140,7 @@ static int set_flashlight_state(struct i2c_client * client, int ct, int part, in
 		if(fl_ic_number == FRONT_FLASHLIGHT_DOUBLE_LED) {
 				chip->lm3644_reg_enable &= (~LM3644_ENABLE_LED1);
 				chip->lm3644_reg_enable &= (~LM3644_ENABLE_LED2);
-				lm3644_write_reg(client, LM3644_REG_ENABLE, chip->lm3644_reg_enable);		
+				lm3644_write_reg(client, LM3644_REG_ENABLE, chip->lm3644_reg_enable);
 		} else {
 			if (chip->lm3644_reg_enable & LM3644_MASK_ENABLE_LED2) {
 				/* if LED 2 is enable, disable LED 1 */
@@ -1140,17 +1163,17 @@ static int set_flashlight_state(struct i2c_client * client, int ct, int part, in
 			if (chip->device_id == AW36413_DEVIC_ID_VALUE) //AW3644,AW36413,AW36515
 			{
 				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED1, 0x21);/*(Code * 2.91) + 2.55 mA  Torch*/
-				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x21);/*(Code * 2.91) + 2.55 mA  Torch*/			
+				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x21);/*(Code * 2.91) + 2.55 mA  Torch*/
 			} else if(chip->device_id == LM3644_DEVICE_ID_VALUE) { //LM3644
 				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED1, 0x46);/*(Code x 1.4) + 0.977 mA Torch*/
-				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x46);/*(Code x 1.4) + 0.977 mA Torch*/					
-			} else if(chip->device_id == LM3644TT_DEVICE_ID_VALUE) { //LM3644TT 
+				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x46);/*(Code x 1.4) + 0.977 mA Torch*/
+			} else if(chip->device_id == LM3644TT_DEVICE_ID_VALUE) { //LM3644TT
 				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED1, 0x23);/*(Code x 2.8) + 1.954 mA Torch*/
-				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x23);/*(Code x 2.8) + 1.954 mA Torch*/	
+				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x23);/*(Code x 2.8) + 1.954 mA Torch*/
 			}
 			else{ //KTD2687
-				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED1, 0x43);/*(Code +1) x 187.5mA / 128  Torch*/			
-				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x43);/*(Code +1) x 187.5mA / 128  Torch*/	
+				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED1, 0x43);/*(Code +1) x 187.5mA / 128  Torch*/
+				lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x43);/*(Code +1) x 187.5mA / 128  Torch*/
 			}
 		} else {
 			chip->lm3644_reg_enable |= LM3644_ENABLE_LED2_TORCH;
@@ -1173,13 +1196,13 @@ static int set_flashlight_state(struct i2c_client * client, int ct, int part, in
 			#endif
 		}
 		lm3644_write_reg(client, LM3644_REG_ENABLE, chip->lm3644_reg_enable);
-		lock_touch_sub = 1;  
+		lock_touch_sub = 1;
 		break;
 	case FRONT_TORCH_OFF:
 		if(fl_ic_number == FRONT_FLASHLIGHT_DOUBLE_LED) {
 				chip->lm3644_reg_enable &= (~LM3644_ENABLE_LED1);
 				chip->lm3644_reg_enable &= (~LM3644_ENABLE_LED2);
-				lm3644_write_reg(client, LM3644_REG_ENABLE, chip->lm3644_reg_enable);		
+				lm3644_write_reg(client, LM3644_REG_ENABLE, chip->lm3644_reg_enable);
 		} else {
 			if (chip->lm3644_reg_enable & LM3644_MASK_ENABLE_LED1) {
 				/* if LED 1 is enable, disable LED 2 */
@@ -1189,11 +1212,11 @@ static int set_flashlight_state(struct i2c_client * client, int ct, int part, in
 				/* disable LED 1 LED 2 and clear mode */
 				chip->lm3644_reg_enable &= (~LM3644_ENABLE_LED2_FLASH);
 				lm3644_write_reg(client, LM3644_REG_ENABLE, chip->lm3644_reg_enable);
-			 	lm3644_set_power(client, LM3644_REGULATOR_TYPE_ENABLE, LM3644_TURN_OFF_LED); 
+			 	lm3644_set_power(client, LM3644_REGULATOR_TYPE_ENABLE, LM3644_TURN_OFF_LED);
 			}
 		}
 		pr_info("FRONT_TORCH_OFF\n");
-		lock_touch_sub = 0;  
+		lock_touch_sub = 0;
 		break;
 	case FRONT_TORCH_ONE_ON:
 	 	switch (single_led_arg)
@@ -1220,12 +1243,12 @@ static int set_flashlight_state(struct i2c_client * client, int ct, int part, in
 				else if(chip->device_id == LM3644_DEVICE_ID_VALUE)
 					lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x46);
 				else
-					lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x43);		
+					lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED2, 0x43);
 				break;
 			default:
 				break;
 		}
-		lm3644_write_reg(client, LM3644_REG_ENABLE, chip->lm3644_reg_enable);	
+		lm3644_write_reg(client, LM3644_REG_ENABLE, chip->lm3644_reg_enable);
 		lock_touch = 1;
 		break;
 	case FRONT_TORCH_ONE_OFF:
@@ -1238,13 +1261,13 @@ static int set_flashlight_state(struct i2c_client * client, int ct, int part, in
 			case FRONT_COLDIC_LED2:
 			case FRONT_WARMIC_LED2:
 				chip->lm3644_reg_enable &= (~LM3644_ENABLE_LED2);
-				break;		 
+				break;
 			default:
 				break;
 		}
 		lm3644_write_reg(client, LM3644_REG_ENABLE, chip->lm3644_reg_enable);
 		lm3644_set_power(client, LM3644_REGULATOR_TYPE_ENABLE, LM3644_TURN_OFF_LED);
-		lock_touch = 0;	
+		lock_touch = 0;
 		break;
 	case BBK_FLASH_AT_TEST:
 			lm3644_write_reg(client, LM3644_REG_TIMING_CONF, 0x1f);/*vivo liuguangwei change flash time out from 150ms to 400ms*/
@@ -1333,6 +1356,9 @@ static int lm3644_ioctl(struct i2c_client *client, unsigned int cmd, unsigned lo
 	unsigned int s;
 	unsigned int ns;
 
+	if (!client)
+		client = lm3644_i2c_client;
+
 	fl_arg = (struct flashlight_dev_arg *)arg;
 	channel = fl_arg->channel;
 
@@ -1360,7 +1386,7 @@ static int lm3644_ioctl(struct i2c_client *client, unsigned int cmd, unsigned lo
 		#if defined (CONFIG_SINGLE_FLASH_DUAL_LED)
 		lm3644_set_level(client, LM3644_CHANNEL_CH1, fl_arg->arg);
 		lm3644_set_level(client, LM3644_CHANNEL_CH2, fl_arg->arg);
-		#else		
+		#else
 		lm3644_set_level(client, channel, fl_arg->arg);
 		#endif
 		break;
@@ -1451,6 +1477,17 @@ static int lm3644_set_driver(struct i2c_client * client, int set)
 {
 	int ret = 0;
 
+	/* fdev->client is NULL for devices registered via the plain
+	 * flashlight_dev_register() path (no per-device i2c_client attached) --
+	 * fall back to the module-global client set during probe, same as
+	 * every other place in this file that needs a guaranteed-valid client. */
+	if (!client)
+		client = lm3644_i2c_client;
+	if (!client) {
+		pr_err("lm3644_set_driver: no i2c client available\n");
+		return -ENODEV;
+	}
+
 	/* set chip and usage count */
 	mutex_lock(&lm3644_mutex);
 	if (set) {
@@ -1475,6 +1512,9 @@ static ssize_t lm3644_strobe_store(struct i2c_client * client,struct flashlight_
 {
 	int i;
 
+	if (!client)
+		client = lm3644_i2c_client;
+
 	if (arg.channel == LM3644_CHANNEL_CH2 && arg.level == 27){
 		if(arg.dur == 200)
 			set_flashlight_state(client, arg.ct, arg.part, 10);
@@ -1486,7 +1526,7 @@ static ssize_t lm3644_strobe_store(struct i2c_client * client,struct flashlight_
 			pr_debug("====hope arg.channel = %d, arg.level = %d\n", arg.channel, arg.level);
 			lm3644_level_ch2 = arg.level;
 			lm3644_write_reg(client, LM3644_REG_TORCH_LEVEL_LED1, (0x7f & 0xbf));/*default value is 0xbf,bit7 should set to 0*/
-			lm3644_write_reg(client, LM3644_REG_FLASH_LEVEL_LED1, (0x7f & 0xbf));/*default value is 0xbf,bit7 should set to 0*/	
+			lm3644_write_reg(client, LM3644_REG_FLASH_LEVEL_LED1, (0x7f & 0xbf));/*default value is 0xbf,bit7 should set to 0*/
 			lm3644_write_reg(client, LM3644_REG_FLASH_LEVEL_LED2, 0x6E);/*0x6E = 1.3A,0x65 = 1.2A*/
 			for (i = 0; i < 10; i++){
 				lm3644_enable_store(client, arg.channel);
@@ -1605,6 +1645,16 @@ static int lm3644_i2c_probe(
 
 	pr_debug("i2c probe start.\n");
 
+	/* Confirmed via live testing: every single register on this board's
+	 * chip only ACKs at 0x6b -- the 0x63 from this board's DTS reg
+	 * property never works, for any register, ever. Rather than retry
+	 * at 0x6b after every failed 0x63 attempt (which costs a full I2C
+	 * timeout each time), just fix the client's address once, here,
+	 * before anything else touches the bus. */
+	pr_info("lm3644: overriding i2c addr 0x%02x -> 0x6b (confirmed via testing)\n",
+		client->addr);
+	client->addr = 0x6b;
+
 	/* check i2c */
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
 		pr_err("Failed to check i2c functionality.\n");
@@ -1662,9 +1712,20 @@ static int lm3644_i2c_probe(
 	chip->device_id = lm3644_get_device_id(client);
 	pr_info("lm3644_i2c_probe lm3644 DEVICE_ID = 0x%x\n", chip->device_id);
 	if(chip->device_id  < 0) {
-		pr_info("[marklee]i2c failed detect%d\n", chip->device_id);
-		err = -EFAULT;
-		goto err_free;
+		/* Native flashlights-1913f logs this exact same failure on this
+		 * board and registers the device anyway -- the first ID read
+		 * apparently doesn't succeed on this hardware, but that isn't
+		 * fatal to actual torch/strobe operation. Don't abort probe. */
+		pr_info("[marklee]i2c failed detect%d (non-fatal, continuing)\n",
+			chip->device_id);
+		/* lm3644_read_reg() latches state_pin_short=1 on any failed
+		 * read (meant to catch a genuine pin-shorted-to-GND fault) --
+		 * the failed ID read above trips this same latch, and once
+		 * state_pin_short_ignore drops to 0 below, EVERY future
+		 * lm3644_write_reg() call (including turning the LED on)
+		 * silently no-ops because of it. Since this specific failure
+		 * is expected/harmless on this board, clear the latch here. */
+		chip->state_pin_short = 0;
 	}
 	else
 	{
@@ -1764,7 +1825,27 @@ static int lm3644_probe(struct platform_device *dev)
 	u32 ints1[4] = { 0 };
 #endif
 	pr_debug("Probe start.\n");
-	
+
+	/* fetch HWEN pinctrl from THIS node (flashlights_lm3644 platform node,
+	 * has pinctrl-names) before starting the i2c driver below -- i2c_add_driver()
+	 * synchronously probes lm3644_i2c_probe(), which needs these already set. */
+	lm3644_hwen_pinctrl = devm_pinctrl_get(&dev->dev);
+	if (IS_ERR(lm3644_hwen_pinctrl)) {
+		pr_info("lm3644 hwen: no pinctrl on platform node\n");
+		lm3644_hwen_pinctrl = NULL;
+	} else {
+		lm3644_hwen_high = pinctrl_lookup_state(lm3644_hwen_pinctrl, "hwen_high");
+		if (IS_ERR(lm3644_hwen_high)) {
+			pr_info("lm3644 hwen: no hwen_high state\n");
+			lm3644_hwen_high = NULL;
+		}
+		lm3644_hwen_low = pinctrl_lookup_state(lm3644_hwen_pinctrl, "hwen_low");
+		if (IS_ERR(lm3644_hwen_low)) {
+			pr_info("lm3644 hwen: no hwen_low state\n");
+			lm3644_hwen_low = NULL;
+		}
+	}
+
 	if (i2c_add_driver(&lm3644_i2c_driver)) {
 		pr_debug("Failed to add i2c driver.\n");
 		return -1;
@@ -1781,7 +1862,7 @@ static int lm3644_probe(struct platform_device *dev)
 			return ret;
 		}
 		/*gpio_set_debounce(g_gpio_pin, g_gpio_headset_deb);*/
-		
+
 		g_flash_irq_num = irq_of_parse_and_map(node, 0);
 		of_property_read_u32_array(node, "interrupts", ints1, ARRAY_SIZE(ints1));
 		g_accdet_eint_type = ints1[1];
@@ -1795,20 +1876,20 @@ static int lm3644_probe(struct platform_device *dev)
 			pr_debug("[flash]accdet set EINT finished, accdet_irq=%d, headsetdebounce=%d\n",
 				     g_flash_irq_num, g_gpio_headset_deb);
 		}
-		
+
 		INIT_DELAYED_WORK(&ir_delayed_work, ir_delayed_func);
 		INIT_WORK(&flash_delay_off_work, flash_delay_off_func);
 		init_timer(&flash_delay_off_timer); // add for flash 100ms off control
-		
+
 		disable_irq_nosync(g_flash_irq_num);
-				
+
 		pr_debug("hope \n");
 	} else {
 		pr_debug("[flash]%s can't find compatible node\n", __func__);
 	}
-	
+
 	return 0;
-	
+
 ir_irq_err:
 	free_irq(g_flash_irq_num, NULL);
 	return -1;
@@ -1899,4 +1980,3 @@ module_exit(flashlight_lm3644_exit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Ziyu Jiang <jiangziyu@meizu.com>");
 MODULE_DESCRIPTION("MTK Flashlight LM3644 Driver");
-

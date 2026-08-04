@@ -35,9 +35,8 @@
 #include <net/sock.h>
 #include <linux/spi/spi.h>
 #include <linux/spi/spidev.h>
-#include <linux/miscdevice.h>
 
-#define NFC_DEV_NAME "mediatek,nxp-sn100"
+#define NFC_DEV_NAME "mtk_sn100"
 
 extern void mt_spi_enable_master_clk(struct spi_device *spidev);
 extern void mt_spi_disable_master_clk(struct spi_device *spidev);
@@ -67,23 +66,6 @@ struct pinctrl_state *pins_mosi_spi;
 struct pinctrl_state *pins_cs_spi;
 struct pinctrl_state *pins_clk_spi;
 #ifdef CONFIG_OF
-
-#ifdef CONFIG_SEC_NFC
-
-#define SEC_NFC_MAGIC   'S'
-#define SEC_ESE_COLD_RESET      _IOW(SEC_NFC_MAGIC, 6, unsigned int)
-#define SEC_SWP_SLEEP  _IOW(SEC_NFC_MAGIC, 7, unsigned int)
-#define SEC_SWP_WAKEUP  _IOW(SEC_NFC_MAGIC, 8, unsigned int)
-#define SEC_SPI_CLK_ENABLE  _IOW(SEC_NFC_MAGIC, 10, unsigned int)
-#define SEC_SPI_CLK_DISABLE  _IOW(SEC_NFC_MAGIC, 11, unsigned int)
-
-extern int trig_cold_reset(void);
-extern int trig_nfc_wakeup(void);
-extern int trig_nfc_sleep(void);
-
-#endif
-
-
 static const struct of_device_id sn100_of_match[] = {
 	{ .compatible = "mediatek,sn100-spi", },
 	{ .compatible = "mediatek,nxp-sn100", },
@@ -200,92 +182,11 @@ bool sn100_get_spiclk_status(void)
 {
 	return spiclk_en;
 }
-
-#ifdef CONFIG_SEC_NFC
-int ese_power_reset(void)
-{
-	/*Add Reset Sequence here*/
-	return trig_cold_reset();
-}
-
-static int sec_ese_power_open(struct inode *inode, struct file *file)
-{
-    pr_info("sec_ese_power_open\n");
-    return 0;
-}
-
-static int sec_ese_power_close(struct inode *inodep, struct file *filp)
-{
-    pr_info("sec_ese_power_close\n");
-    return 0;
-}
-
-static ssize_t sec_ese_power_write(struct file *file, const char __user *buf, size_t len, loff_t *ppos)
-{
-
-    pr_info("sec_ese_power_write \n");
-    return 0;
-}
-
-static long sec_ese_power_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
-{
-	int status = 0;
-	int ret = 0;
-    pr_info("sec_ese_power_ioctl \n");
-    switch (cmd) {
-    case SEC_SWP_SLEEP:
-		ret = trig_nfc_sleep();
-		break;
-    case SEC_SWP_WAKEUP:
-
-		ret = trig_nfc_wakeup();
-		break;
-
-    case SEC_ESE_COLD_RESET:
-		ret = ese_power_reset();
-		break;
-	case SEC_SPI_CLK_ENABLE:
-		if (sn100_clk_enable(1) == false) {
-			pr_err("%s spi clk enable error \n", __func__);
-			ret = -1;
-		}
-		break;
-	case SEC_SPI_CLK_DISABLE:
-		if (sn100_clk_enable(0) == false) {
-			pr_err("%s spi clk disable error \n", __func__);
-			ret = -1;
-		}
-		break;
-	}
-	return ret;
-}
-
-static const struct file_operations sec_ese_power_fops = {
-    .owner      = THIS_MODULE,
-    .write      = sec_ese_power_write,
-    .open       = sec_ese_power_open,
-    .release    = sec_ese_power_close,
-    .unlocked_ioctl = sec_ese_power_ioctl,
-#ifdef CONFIG_COMPAT
-    .compat_ioctl = sec_ese_power_ioctl,
-#endif
-    .llseek     = no_llseek,
-};
-
-struct miscdevice sec_ese_power_miscdevice = {
-    .minor = MISC_DYNAMIC_MINOR,
-    .name = "sec-esepwr",
-    .fops = &sec_ese_power_fops,
-};
-
-#endif
-
-
 static int sn100_probe(struct spi_device *spi)
 {
-	int status = -EINVAL;
 	FUNC_ENTRY();
 
+	int status = -EINVAL;
 	spiclk_en = false;
 	if (NULL == spi) {
 		pr_err("%s spi_device is NULL\n", __func__);
@@ -301,36 +202,14 @@ static int sn100_probe(struct spi_device *spi)
 	}
 	//sn100_clk_enable(spi, 1);//clk on
 
-#ifdef CONFIG_SEC_NFC
-	status = misc_register(&sec_ese_power_miscdevice);
-    if (status) {
-		pr_info("can't register eSE power driver :(\n");
-		goto err;
-	}
-#endif
 err:
 	FUNC_EXIT();
 	return status;
 }
 
-static int ese_power_suspend(struct device *dev)
-{
-	pr_info("ese_power_suspend\n");
-	return 0;
-}
-static int ese_power_resume(struct device *dev)
-{
-	pr_info("ese_power_resume\n");
-	//sn100_clk_enable(1);
-	return 0;
-}
-
-static SIMPLE_DEV_PM_OPS(ese_power_pm_ops, ese_power_suspend, ese_power_resume);
-
 
 static struct spi_driver sn100_spi_driver = {
 	.driver = {
-		.pm = &ese_power_pm_ops,
 		.name = NFC_DEV_NAME,
 		.bus = &spi_bus_type,
 		.owner = THIS_MODULE,
@@ -348,7 +227,6 @@ static int sn100_remove(struct spi_device *spi)
 	spi_unregister_driver(&sn100_spi_driver);
 	spi_dev = NULL;
 	FUNC_EXIT();
-	return  0;
 }
 
 static int __init sn100_spi_init(void)

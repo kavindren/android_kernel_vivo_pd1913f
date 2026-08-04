@@ -42,7 +42,6 @@ This project is focused on updating security components and adding more tools (K
   - [x] Camera
 - **In progress (Known issues):**
   - [ ] **NFC**
-  - [ ] **Flashlight**
   - [ ] **vivo FlashCharge** - impossible due to missing vivo drivers
 
 ---

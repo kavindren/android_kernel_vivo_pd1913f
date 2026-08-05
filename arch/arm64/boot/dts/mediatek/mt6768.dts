@@ -3716,6 +3716,45 @@ defined(CONFIG_MTK_CAM_SECURITY_SUPPORT)
 		Q_MAX_L_CURRENT = <(200)>;
 		Q_MAX_H_CURRENT = <(2000)>;
 
+		/*
+		 * MULTI_TEMP_GAUGE0=1 makes mtk_battery_core.c read Qmax
+		 * per temperature bin from g_Q_MAX/g_Q_MAX_H_CURRENT (index
+		 * i*TOTAL_BATTERY_NUMBER(4)+battery_id) instead of the
+		 * Q_MAX_POS_x and Q_MAX_NEG_10 above, which nothing parses
+		 * in this driver. Without this property the driver silently
+		 * falls back to mt6768's generic reference-board defaults
+		 * (~2796-2946mAh) instead of this battery's real ~4500mAh,
+		 * which is why reported SOC% ran far behind real Vbat.
+		 * bat1 column = real PD1913F values (T2/T4 interpolated
+		 * between the known T0/T1/T3/T5 points above); bat2-4 and
+		 * the unreachable T6-T9 rows (ACTIVE_TABLE=6 caps active
+		 * bins at T0-T5) keep the original generic defaults.
+		 */
+		g_Q_MAX = <
+			4500 2712 2490 1965
+			4500 2851 2468 1984
+			4320 2432 2310 1946
+			4200 1991 1858 1873
+			3960 1960 1843 1851
+			3800 1652 1533 1541
+			3800 1642 1523 1531
+			3800 1632 1513 1521
+			3800 1622 1503 1511
+			3800 1612 1493 1501
+		>;
+		g_Q_MAX_H_CURRENT = <
+			4050 2412 2190 1665
+			4050 2551 2168 1684
+			3888 2132 2010 1646
+			3780 1691 1558 1573
+			3564 1660 1543 1551
+			3420 1650 1533 1541
+			3420 1640 1523 1531
+			3420 1630 1513 1521
+			3420 1620 1503 1511
+			3420 1610 1493 1501
+		>;
+
 		PSEUDO1_EN = <(1)>;
 		PSEUDO100_EN = <(1)>;
 		PSEUDO100_EN_DIS = <(1)>;

@@ -165,6 +165,7 @@ struct bq25890_info {
 	const char *eint_name;
 	enum charger_type chg_type;
 	int irq;
+	bool plugged;
 
 	struct delayed_work boot_recheck_work;
 };
@@ -1881,7 +1882,8 @@ static irqreturn_t bq25890_irq_handler(int irq, void *data)
 	pg_stat = bq25890_get_pg_state();
 	org_chg_type = info->chg_type;
 
-	if (pg_stat) {
+	if (pg_stat && !info->plugged) {
+		info->plugged = true;
 		/*
 		 * BC1.2 detection is not instantaneous. probe() waits for
 		 * force_dpdm to clear (up to 5s, polled every 500ms) before
@@ -1890,6 +1892,14 @@ static irqreturn_t bq25890_irq_handler(int irq, void *data)
 		 * reads vbus_stat=0 -> CHARGER_UNKNOWN, indistinguishable
 		 * from an actual unplug. This IRQ runs threaded
 		 * (IRQF_ONESHOT), so sleeping here is fine.
+		 *
+		 * Only run this once per plug-in transition (guarded by
+		 * info->plugged above): force_dpdm caps IINLIM to its BC1.2
+		 * detection default, so re-running it on every subsequent
+		 * IRQ while already charging (fault/status IRQs keep firing
+		 * every ~1s) kept undoing mtk_switch_charging's negotiated
+		 * input current and capped real charging current around
+		 * the BC1.2 detection default.
 		 */
 		bq25890_set_force_dpdm(1);
 		for (i = 0; i < 10; i++) {
@@ -1899,7 +1909,8 @@ static irqreturn_t bq25890_irq_handler(int irq, void *data)
 				break;
 		}
 		info->chg_type = bq25890_get_charger_type(info);
-	} else {
+	} else if (!pg_stat) {
+		info->plugged = false;
 		#if defined(CONFIG_PROJECT_PHY) || defined(CONFIG_PHY_MTK_SSUSB)
 		Charger_Detect_Init();
 		#endif
@@ -2112,6 +2123,7 @@ static int bq25890_driver_probe(struct i2c_client *client, const struct i2c_devi
 		info->chg_type = bq25890_get_charger_type(info);
 		bq25890_set_charger_type(info);
 	}
+	info->plugged = pg_stat;
 
 	bq25890_set_auto_dpdm(1);
 

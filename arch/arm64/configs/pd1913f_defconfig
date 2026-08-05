@@ -531,13 +531,15 @@ CONFIG_MTK_WVDRM_L1_SUPPORT=y
 #CONFIG_MTK_CHG_TYPE_DET=y
 
 CONFIG_MTK_CHARGER=y
-CONFIG_MT6370_PMU_CHARGER=y
+# CONFIG_MT6370_PMU_CHARGER is not set
+# disabled: it also registers as charger_name "primary_chg", conflicting with BQ25890
 # CONFIG_CHARGER_BQ25890 is not set
 # it is just a generic linux driver (non-mtk), so disable it
 
 # CONFIG_CHARGER_RT9465 is not set
 CONFIG_MTK_BQ25890_SUPPORT=y
-# CONFIG_CHARGER_BQ25601 is not set
+CONFIG_CHARGER_BQ25601=y
+CONFIG_MTK_PUMP_EXPRESS_PLUS_20_SUPPORT=y
 
 # CONFIG_CHARGER_RT9467 is not set
 # P.S. some V17 Neo have BQ25601 instead of RT9467, and some have in the opposite way. change if you need to.

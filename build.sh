@@ -33,6 +33,7 @@ NM_PATH="$CLANG_DIR/bin/llvm-nm"
 export CLANG_TRIPLE=aarch64-linux-gnu-
 export CROSS_COMPILE=aarch64-linux-android-
 export PATH="$CLANG_DIR/bin:$GCC64_DIR/bin:$PATH"
+export LOCALVERSION="-kavindren"
 
 # Common build flags
 MAKE_OPTS=(

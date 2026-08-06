@@ -47,7 +47,8 @@ MAKE_OPTS=(
     CROSS_COMPILE=aarch64-linux-android-
     LLVM=1
     LLVM_IAS=0
-    KCFLAGS="-fcolor-diagnostics -Wno-unused-function -Wno-unused-variable"
+    quiet=quiet_
+    KCFLAGS="-fcolor-diagnostics -Wno-unused-function -Wno-unused-variable -march=armv8.2-a -mtune=cortex-a55"
 )
 
 # Processing arguments

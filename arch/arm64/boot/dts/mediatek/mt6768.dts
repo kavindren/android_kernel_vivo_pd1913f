@@ -2079,6 +2079,8 @@ defined(CONFIG_MTK_CAM_SECURITY_SUPPORT)
 	i2c7: i2c7@11004000 {
 		compatible = "mediatek,i2c";
 		id = <7>;
+		#address-cells = <1>;
+		#size-cells = <0>;
 		reg = <0 0x11004000 0 0x1000>,
 			<0 0x11000680 0 0x180>;
 		interrupts = <GIC_SPI 110 IRQ_TYPE_LEVEL_LOW>;
@@ -3582,7 +3584,7 @@ defined(CONFIG_MTK_CAM_SECURITY_SUPPORT)
 		usb_charger_current = <500000>;
 		ac_charger_current = <2050000>;
 		ac_charger_input_current = <3200000>;
-		non_std_ac_charger_current = <2050000>;
+		non_std_ac_charger_current = <500000>;
 		charging_host_charger_current = <1500000>;
 		apple_1_0a_charger_current = <650000>;
 		apple_2_1a_charger_current = <800000>;

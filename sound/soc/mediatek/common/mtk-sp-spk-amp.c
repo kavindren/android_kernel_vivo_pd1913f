@@ -156,6 +156,7 @@ int mtk_ext_spk_get_status(void)
 {
 #ifdef CONFIG_SND_SOC_AW87339
 	// return aw87339_spk_status_get();
+	return 0;
 #else
 	return 0;
 #endif

@@ -129,6 +129,8 @@ struct flashlight_operations {
 	int (*flashlight_ioctl)(struct i2c_client *i2c_client, unsigned int cmd, unsigned long arg);
 	ssize_t (*flashlight_strobe_store)(struct i2c_client *i2c_client, struct flashlight_arg arg);
 	int (*flashlight_set_driver)(struct i2c_client *i2c_client, int set);
+	/* persistent on/off, no auto-timeout — for recovery/torch UI */
+	ssize_t (*flashlight_torch_store)(struct i2c_client *i2c_client, struct flashlight_arg arg);
 };
 
 /* device resiger */

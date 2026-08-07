@@ -1652,6 +1652,82 @@ unlock:
 }
 static DEVICE_ATTR_RW(flashlight_sw_disable);
 
+/* flashlight torch sysfs — persistent on/off, no auto-timeout */
+static ssize_t flashlight_torch_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "[TYPE] [CT] [PART] [ONOFF]\n");
+}
+
+static ssize_t flashlight_torch_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t size)
+{
+	struct flashlight_dev *fdev;
+	struct flashlight_arg fl_arg;
+	s32 num;
+	int count = 0;
+	char delim[] = " ";
+	char *token, *cur = (char *)buf;
+	int ret;
+
+	memset(&fl_arg, 0, sizeof(struct flashlight_arg));
+
+	while (cur) {
+		token = strsep(&cur, delim);
+		ret = kstrtos32(token, 10, &num);
+		if (ret) {
+			pr_err("Error arguments\n");
+			goto unlock;
+		}
+
+		if (count == FLASHLIGHT_ARG_TYPE)
+			fl_arg.type = (int)num;
+		else if (count == FLASHLIGHT_ARG_CT)
+			fl_arg.ct = (int)num;
+		else if (count == FLASHLIGHT_ARG_PART)
+			fl_arg.part = (int)num;
+		else if (count == FLASHLIGHT_ARG_LEVEL)
+			fl_arg.level = (int)num; /* reused as on/off: 0 or 1 */
+		else {
+			count++;
+			break;
+		}
+
+		count++;
+	}
+
+	/* TYPE CT PART ONOFF -> 4 tokens */
+	if (count != FLASHLIGHT_ARG_LEVEL + 1) {
+		pr_err("Error argument number: (%d)\n", count);
+		ret = -1;
+		goto unlock;
+	}
+
+	mutex_lock(&fl_mutex);
+	fdev = flashlight_find_dev_by_full_index(fl_arg.type, fl_arg.ct, fl_arg.part);
+	mutex_unlock(&fl_mutex);
+	if (!fdev) {
+		pr_info("Find no flashlight device\n");
+		ret = -1;
+		goto unlock;
+	}
+
+	fl_arg.channel = fdev->dev_id.channel;
+	fl_arg.decouple = fdev->dev_id.decouple;
+
+	if (fdev->ops && fdev->ops->flashlight_torch_store) {
+		fdev->ops->flashlight_torch_store(fdev->client, fl_arg);
+		ret = size;
+	} else {
+		pr_info("Failed with no flashlight torch op\n");
+		ret = -1;
+	}
+
+unlock:
+	return ret;
+}
+static DEVICE_ATTR_RW(flashlight_torch);
+
 /******************************************************************************
  * Platform device and driver
  *****************************************************************************/
@@ -1770,6 +1846,11 @@ static int flashlight_probe(struct platform_device *dev)
 		pr_err("Failed to create device file(sw_disable)\n");
 		goto err_create_sw_disable_device_file;
 	}
+	if (device_create_file(flashlight_device,
+				&dev_attr_flashlight_torch)) {
+		pr_err("Failed to create device file(torch)\n");
+		goto err_create_torch_device_file;
+	}
 
 	/* init flashlight */
 	fl_init();
@@ -1778,6 +1859,8 @@ static int flashlight_probe(struct platform_device *dev)
 
 	return 0;
 
+err_create_torch_device_file:
+	device_remove_file(flashlight_device, &dev_attr_flashlight_torch);
 err_create_sw_disable_device_file:
 	device_remove_file(flashlight_device, &dev_attr_flashlight_sw_disable);
 err_create_fault_device_file:
@@ -1808,6 +1891,7 @@ static int flashlight_remove(struct platform_device *dev)
 	fl_uninit();
 
 	/* remove device file */
+	device_remove_file(flashlight_device, &dev_attr_flashlight_torch);
 	device_remove_file(flashlight_device, &dev_attr_flashlight_sw_disable);
 	device_remove_file(flashlight_device, &dev_attr_flashlight_fault);
 	device_remove_file(flashlight_device, &dev_attr_flashlight_current);

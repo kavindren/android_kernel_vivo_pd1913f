@@ -27,6 +27,7 @@
 #define FLASHLIGHT_SYSFS_CAPABILITY "flashlight_capability"
 #define FLASHLIGHT_SYSFS_FAULT      "flashlight_fault"
 #define FLASHLIGHT_SYSFS_SW_DISABLE "flashlight_sw_disable"
+#define FLASHLIGHT_SYSFS_TORCH      "flashlight_torch"
 
 /* scenario */
 #define FLASHLIGHT_SCENARIO_CAMERA_MASK 1

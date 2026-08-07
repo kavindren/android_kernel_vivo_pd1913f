@@ -1548,12 +1548,30 @@ static ssize_t lm3644_strobe_store(struct i2c_client * client,struct flashlight_
 	return 0;
 }
 
+static ssize_t lm3644_torch_store(struct i2c_client *client, struct flashlight_arg arg)
+{
+	if (!client)
+		client = lm3644_i2c_client;
+
+	if (arg.level) {
+		lm3644_set_driver(client, 1);
+		lm3644_set_level(client, arg.channel, 0); /* min torch current */
+		lm3644_enable_store(client, arg.channel);
+	} else {
+		lm3644_disable_store(client, arg.channel);
+		lm3644_set_driver(client, 0);
+	}
+
+	return 0;
+}
+
 static struct flashlight_operations lm3644_ops = {
 	lm3644_open,
 	lm3644_release,
 	lm3644_ioctl,
 	lm3644_strobe_store,
-	lm3644_set_driver
+	lm3644_set_driver,
+	lm3644_torch_store
 };
 
 

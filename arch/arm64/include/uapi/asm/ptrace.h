@@ -76,7 +76,13 @@ struct user_pt_regs {
 };
 
 struct user_fpsimd_state {
+#if defined(__LP64__)
 	__uint128_t	vregs[32];
+#else
+	/* __uint128_t is not valid for 32-bit targets - see the identical guard
+	 * in asm/sigcontext.h for why this arm-only fallback exists. */
+	unsigned long long vregs[32][2];
+#endif
 	__u32		fpsr;
 	__u32		fpcr;
 	__u32		__reserved[2];

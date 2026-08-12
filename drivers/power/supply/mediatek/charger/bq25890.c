@@ -168,6 +168,7 @@ struct bq25890_info {
 	bool plugged;
 
 	struct delayed_work boot_recheck_work;
+	struct delayed_work recheck_work;
 };
 
 static int bq25890_set_charger_type(struct bq25890_info *info);
@@ -1861,13 +1862,25 @@ static int bq25890_dump_register(struct charger_device *chg_dev)
 	return 0;
 }
 
+static void bq25890_recheck_charger_type(struct work_struct *work)
+{
+	struct bq25890_info *info = container_of(to_delayed_work(work),
+						struct bq25890_info, recheck_work);
+	enum charger_type org_chg_type = info->chg_type;
+
+	if (!info->plugged)
+		return;
+
+	info->chg_type = bq25890_get_charger_type(info);
+	if (info->chg_type != org_chg_type)
+		bq25890_set_charger_type(info);
+}
+
 static irqreturn_t bq25890_irq_handler(int irq, void *data)
 {
 	u8 pg_stat = 0;
 	enum charger_type org_chg_type;
 	bool en = false;
-	bool force_dpdm = false;
-	int i;
 	struct bq25890_info *info = (struct bq25890_info *)data;
 
 	pr_info("%s\n", __func__);
@@ -1885,32 +1898,32 @@ static irqreturn_t bq25890_irq_handler(int irq, void *data)
 	if (pg_stat && !info->plugged) {
 		info->plugged = true;
 		/*
-		 * BC1.2 detection is not instantaneous. probe() waits for
-		 * force_dpdm to clear (up to 5s, polled every 500ms) before
-		 * trusting vbus_stat -- the IRQ path never did this, so a
-		 * plug-in interrupt firing while detection is still running
-		 * reads vbus_stat=0 -> CHARGER_UNKNOWN, indistinguishable
-		 * from an actual unplug. This IRQ runs threaded
-		 * (IRQF_ONESHOT), so sleeping here is fine.
+		 * Match TI's own bq2589x reference driver here: BC1.2
+		 * detection runs autonomously in hardware as soon as VBUS/
+		 * PG asserts, and the chip raises another interrupt on its
+		 * own once the STAT register settles - no need to force a
+		 * fresh DPDM cycle and wait for it. The previous approach
+		 * (force_dpdm + poll for up to 5s) actively hurt real
+		 * charging speed: force_dpdm caps IINLIM to the BC1.2
+		 * detection default, and every fault/status IRQ that keeps
+		 * firing every ~1s while already charging re-ran the same
+		 * forced cycle, repeatedly undoing mtk_switch_charging's
+		 * negotiated input current - this is why charging was stuck
+		 * around the ~500mA BC1.2 default instead of the adapter's
+		 * real DCP/fast-charge capability.
 		 *
-		 * Only run this once per plug-in transition (guarded by
-		 * info->plugged above): force_dpdm caps IINLIM to its BC1.2
-		 * detection default, so re-running it on every subsequent
-		 * IRQ while already charging (fault/status IRQs keep firing
-		 * every ~1s) kept undoing mtk_switch_charging's negotiated
-		 * input current and capped real charging current around
-		 * the BC1.2 detection default.
+		 * The one thing worth keeping from the old fix: a plug-in
+		 * IRQ can still fire before the chip's autonomous detection
+		 * has settled, momentarily reading vbus_stat=0 (CHARGER_
+		 * UNKNOWN). Rather than forcing anything, just schedule one
+		 * passive recheck shortly after in case this board's wiring
+		 * doesn't reliably deliver the chip's own follow-up IRQ.
 		 */
-		bq25890_set_force_dpdm(1);
-		for (i = 0; i < 10; i++) {
-			msleep(500);
-			bq25890_get_force_dpdm(&force_dpdm);
-			if (!force_dpdm)
-				break;
-		}
 		info->chg_type = bq25890_get_charger_type(info);
+		schedule_delayed_work(&info->recheck_work, msecs_to_jiffies(1500));
 	} else if (!pg_stat) {
 		info->plugged = false;
+		cancel_delayed_work(&info->recheck_work);
 		#if defined(CONFIG_PROJECT_PHY) || defined(CONFIG_PHY_MTK_SSUSB)
 		Charger_Detect_Init();
 		#endif
@@ -2065,9 +2078,8 @@ static struct charger_ops bq25890_chg_ops = {
 
 static int bq25890_driver_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
-	int ret = 0, i = 0;
+	int ret = 0;
 	struct bq25890_info *info = NULL;
-	bool force_dpdm = false;
 	unsigned int pg_stat = 0;
 
 	pr_info("[bq25890_driver_probe]\n");
@@ -2111,15 +2123,15 @@ static int bq25890_driver_probe(struct i2c_client *client, const struct i2c_devi
 
 	pg_stat = bq25890_get_pg_state();
 	if (pg_stat) {
-		pr_info("%s: force charger type detection\n", __func__);
-		/* Force dpdm will become 0 after detecting is finished */
-		bq25890_set_force_dpdm(1);
-		for (i = 0; i < 10; i++) {
-			msleep(500);
-			bq25890_get_force_dpdm(&force_dpdm);
-			if (!force_dpdm)
-				break;
-		}
+		/*
+		 * Same reasoning as bq25890_irq_handler(): don't force a
+		 * fresh DPDM cycle here either. AUTO_DPDM_EN gets enabled
+		 * right below, and the chip's autonomous BC1.2 detection has
+		 * already had the msleep(50) above plus probe() runtime to
+		 * settle - trust vbus_stat directly instead of capping
+		 * IINLIM to the BC1.2 detection default via force_dpdm.
+		 */
+		pr_info("%s: reading charger type detection\n", __func__);
 		info->chg_type = bq25890_get_charger_type(info);
 		bq25890_set_charger_type(info);
 	}
@@ -2127,6 +2139,7 @@ static int bq25890_driver_probe(struct i2c_client *client, const struct i2c_devi
 
 	bq25890_set_auto_dpdm(1);
 
+	INIT_DELAYED_WORK(&info->recheck_work, bq25890_recheck_charger_type);
 	INIT_DELAYED_WORK(&info->boot_recheck_work, bq25890_boot_recheck_work);
 	if (pg_stat)
 		schedule_delayed_work(&info->boot_recheck_work,

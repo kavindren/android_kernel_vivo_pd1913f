@@ -1,0 +1,191 @@
+/*
+ * mt6768_battery_gauge_fix.dtsi
+ *
+ * Adds the STANDARD MediaTek battery/gauge nodes
+ * (compatible = "mediatek,battery" / "mediatek,bat_meter"),
+ * which are what drivers/power/supply/mediatek/battery_common.c
+ * and battery_meter.c actually look for via of_find_compatible_node().
+ *
+ * This is intentionally a NEW, separate pair of nodes -- vivo's own
+ * "battery" / "meter" / "charge" / "battery_id" / "fuelsummary" /
+ * "cms_v2" / "power_supply_lite" nodes (compatible = "vivo,...") are
+ * left completely untouched below. Do not delete them or rename their
+ * compatible strings: LK may still be populating them at boot
+ * (confirmed earlier: stock dtb has them nearly empty, LK fills them
+ * in at runtime), and touching them risks breaking whatever LK does
+ * with them (e.g. the offline charging screen). This file only adds
+ * a parallel, fully self-contained node that the real MTK gauge
+ * driver in your tree can bind to on its own.
+ *
+ * OCV/impedance data converted from vivo's own PD1913_battery_table.dtsi,
+ * battery id 0 ("B-H0 SX 4500"). MTK_MULTI_BAT_PROFILE_SUPPORT is not
+ * defined anywhere in your tree (confirmed by your grep), so only ONE
+ * battery-id profile is used regardless of which of the 3 real vivo
+ * variants is actually installed -- id 0 is as good a default as any,
+ * they are all very close 4500 mAh packs. If you can read out
+ * g_fg_battery_id / the battery_id ADC value at runtime and it turns
+ * out to consistently prefer variant 1 or 2, regenerate this file with
+ * BATT_ID = 1 or 2 in the conversion script instead.
+ *
+ * Only 4 of vivo's 5 temperature bins are used (bat_meter.c supports
+ * t0..t3, vivo has t0..t4). Mapped by matching real temperature:
+ *   std t0 (hot)    <- vivo t4 (50C)
+ *   std t1          <- vivo t3 (25C)
+ *   std t2          <- vivo t2 (10C)
+ *   std t3 (cold)   <- vivo t1 (0C)
+ * vivo's t0 (-10C) bin is dropped -- below 0C the t3 curve is reused.
+ * Minor accuracy loss only in very cold conditions, does not affect
+ * normal indoor use.
+ *
+ * Every table row is trimmed to 100 points (vivo has 101, idx 0..100).
+ * This assumes the compiled-in BATTERY_PROFILE_STRUCT array size is
+ * 100 (confirmed for the _fg_20 variant's battery_profile_t0[100];
+ * very likely identical for the active non-fg20 array, but if you get
+ * a build/parse warning about array size, that's the first thing to
+ * check -- find wherever battery_profile_t0[] / r_profile_t0[] are
+ * declared (extern) and adjust NUM_PER_TABLE below to match).
+ *
+ * NTC thermistor R-T curve (batt_temperature_table) and the pull-up
+ * resistor/voltage values below are a GENERIC 100k/B=4250 reference
+ * curve, NOT measured from your actual board. They only affect which
+ * temperature bin gets selected (and the reported battery temp, which
+ * some UIs show) -- they do NOT affect the OCV voltage table above,
+ * which is the part that actually fixes the -1% capacity. If the
+ * reported battery temperature looks obviously wrong once this boots,
+ * that is the parameter set to revisit; it will not stop capacity%
+ * from working.
+ */
+
+
+	battery_std: battery_std {
+		compatible = "mediatek,battery";
+
+		/* charging-side thresholds copied 1:1 from your existing
+		 * `charger` node (mediatek,charger) a few lines above --
+		 * same physical battery/JEITA design, just also consumed
+		 * by the older battery_common.c framework. */
+		stop_charging_in_takling = <0>;
+		talking_recharge_voltage = <4000>;
+		talking_sync_time = <60>;
+		mtk_temperature_recharge_support = <0>;
+		max_charge_temperature = <50>;
+		max_charge_temperature_minus_x_degree = <47>;
+		min_charge_temperature = <0>;
+		min_charge_temperature_plus_x_degree = <6>;
+		err_charge_temperature = <58>;
+		v_pre2cc_thres = <3400>;
+		v_cc2topoff_thres = <4340>;
+		recharging_voltage = <4230>;
+		charging_full_current = <300>;
+		config_usb_if = <1>;
+		usb_charger_current_suspend = <0>;
+		usb_charger_current_unconfigured = <70000>;
+		usb_charger_current_configured = <500000>;
+		usb_charger_current = <500000>;
+		ac_charger_input_current = <3200000>;
+		ac_charger_current = <2050000>;
+		non_std_ac_charger_current = <500000>;
+		charging_host_charger_current = <1500000>;
+		apple_1_0a_charger_current = <650000>;
+		apple_2_1a_charger_current = <800000>;
+		bat_low_temp_protect_enable = <0>;
+		v_charger_enable = <1>;
+		v_charger_max = <6500000>;
+		v_charger_min = <4600000>;
+		onehundred_percent_tracking_time = <10>;
+		npercent_tracking_time = <10>;
+		sync_to_real_tracking_time = <10>;
+		v_0percent_tracking = <3400>;
+		high_battery_voltage_support = <0>;
+		mtk_jeita_standard_support = <1>;
+		cust_soc_jeita_sync_time = <60>;
+		jeita_recharge_voltage = <4230>;
+		jeita_temp_above_pos_60_cv_voltage = <4240000>;
+		jeita_temp_below_neg_10_cv_voltage = <4040000>;
+		jeita_neg_10_to_pos_0_full_current = <300>;
+		mtk_pump_express_plus_support = <0>;
+		ta_start_battery_soc = <0>;
+		ta_stop_battery_soc = <85>;
+		ta_ac_12v_input_current = <3200000>;
+		ta_ac_9v_input_current = <3200000>;
+		ta_ac_7v_input_current = <3200000>;
+		ta_ac_charging_current = <3000000>;
+		ta_9v_support = <1>;
+		ta_12v_support = <1>;
+	};
+
+	bat_meter_std: bat_meter_std {
+		compatible = "mediatek,bat_meter";
+
+		/* --- NTC / temperature sensing: GENERIC placeholder, see
+		 * header comment above --- */
+		rbat_pull_up_r = <16000>;
+		rbat_pull_up_volt = <1800>;
+		batt_temperature_table_num = <17>;
+
+		batt_temperature_table = <
+		60 22368 55 27167 50 33195 45 40816
+		40 50520 35 62965 30 79049 25 100000
+		20 127523 15 163999 10 212791 5 278697
+		0 368639 (-5) 492719 (-10) 665864 (-15) 910412
+		(-20) 1260250
+		>;
+
+
+
+		temperature_t0 = <50>;
+		temperature_t1 = <25>;
+		temperature_t2 = <10>;
+		temperature_t3 = <0>;
+		temperature_t = <25>;
+
+		/* --- sense resistor / meter calibration: generic MTK
+		 * reference defaults (5 mOhm sense resistor is extremely
+		 * common; adjust if you know your board's actual value) --- */
+		fg_meter_resistance = <100>;
+		r_bat_sense = <5>;
+		r_i_sense = <5>;
+		r_charger_1 = <68>;
+		r_charger_2 = <150>;
+		cust_r_sense = <5>;
+		cust_hw_cc = <1>;
+		aging_tuning_value = <100>;
+		cust_r_fg_offset = <0>;
+		ocv_board_compesate = <0>;
+		r_fg_board_base = <0>;
+		r_fg_board_slope = <100>;
+		car_tune_value = <100>;
+		current_detect_r_fg = <100>;
+		minerroroffset = <500>;
+		fg_vbat_average_size = <9>;
+		r_fg_value = <5>;
+
+		/* --- design capacity (Q_MAX) per temperature, in mAh x10;
+		 * 4500 mAh cell per your battery_id node's "B-H0 ... 4500" --- */
+		q_max_pos_50 = <4500>;
+		q_max_pos_25 = <4500>;
+		q_max_pos_0 = <4300>;
+		q_max_neg_10 = <3800>;
+		q_max_pos_50_h_current = <4450>;
+		q_max_pos_25_h_current = <4450>;
+		q_max_pos_0_h_current = <4200>;
+
+		oam_d5 = <0>;
+		change_tracking_point = <30>;
+		cust_tracking_point = <2>;
+
+		/* --- power-on OCV sanity-check tolerances (generic) --- */
+		cust_poweron_delta_capacity_tolrance = <10>;
+		cust_poweron_low_capacity_tolrance = <10>;
+		cust_poweron_max_vbat_tolrance = <60>;
+		cust_poweron_delta_vbat_tolrance = <30>;
+		cust_poweron_delta_hw_sw_ocv_capacity_tolrance = <10>;
+		fixed_tbat_25 = <0>;
+
+		vbat_normal_wakeup = <3550>;
+		vbat_low_power_wakeup = <3450>;
+		normal_wakeup_period = <300>;
+		low_power_wakeup_period = <30>;
+		close_poweroff_wakeup_period = <28800>;
+		vbat_remove_detection = <0>;
+	};

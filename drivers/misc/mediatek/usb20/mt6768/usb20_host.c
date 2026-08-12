@@ -40,6 +40,8 @@
 #include "tusb422_linux.h"
 #endif
 
+#include <mt-plat/mtk_battery.h>
+
 #ifdef CONFIG_MTK_XHCI
 #include <linux/gpio.h>
 #include <linux/otg_gpio_pinctrl.h>
@@ -1117,6 +1119,60 @@ static int iddig_int_init(void)
 	return 0;
 }
 
+/*
+ * VBUS reality watchdog.
+ *
+ * On this board, mt_usb_disconnect() is only ever reached indirectly, via
+ * mtk_chg_type_det.c reacting to a POWER_SUPPLY_PROP_CHARGE_TYPE change from
+ * the BQ25601 charger-detection stack. That notification has been observed
+ * to never fire on a real physical cable removal here, which leaves the
+ * gadget stuck believing a host is still attached (usb_state<CONFIGURED>
+ * forever) and SPM_RESOURCE_USER_SSUSB permanently blocking IdleBus26m /
+ * IdleSyspll / IdleDram - i.e. the SoC can never reach deep idle again for
+ * the rest of the boot, even with the screen off and nothing plugged in.
+ *
+ * battery_get_vbus() reads the charger input voltage straight off the
+ * gauge/ADC, independent of that notification chain, so it stays a reliable
+ * ground truth even when the chg_type state machine gets stuck. Poll it
+ * periodically and force a real disconnect whenever it disagrees with the
+ * driver's believed state.
+ *
+ * mt_usb_disconnect() alone only clears the gadget's own cdev->config state
+ * (confirmed via dmesg: it does fire and does report vbus_exist=0 correctly)
+ * - it does NOT touch the musb->power-gated PHY clock refcount in
+ * usb_enable_clock() (usb20_phy.c), which is what actually calls
+ * usb_hal_dpidle_request() and owns the SPM_RESOURCE_USER_SSUSB vote. That
+ * refcount is driven by musb_platform_enable/disable(), a separate path that
+ * doesn't get exercised just by notifying the gadget layer. Forcing the
+ * dpidle vote directly fixed that part (confirmed: dpidle_status goes back
+ * to 0). But mtk_musb->usb_lock - a *separate* wakeup_source ("USB suspend
+ * lock", acquired in do_connection_work()'s connect branch, meant to be
+ * released in its disconnect branch via __pm_relax()) is still observed
+ * stuck active, still blocking system_suspend on its own. Whatever left
+ * mtk_musb->power stuck true also means that disconnect branch's
+ * "mtk_musb->power && !usb_on" condition never matches, so the relax call
+ * never runs either. Release it directly too, same reasoning as dpidle.
+ */
+#define VBUS_WATCHDOG_INTERVAL_MS	5000
+#define VBUS_WATCHDOG_NO_VBUS_MV	2500
+
+extern void mt_usb_disconnect(void);
+
+static struct delayed_work vbus_watchdog_work;
+
+static void do_vbus_watchdog_work(struct work_struct *data)
+{
+	if (battery_get_vbus() < VBUS_WATCHDOG_NO_VBUS_MV) {
+		mt_usb_disconnect();
+		usb_hal_dpidle_request(USB_DPIDLE_ALLOWED);
+		if (mtk_musb && mtk_musb->usb_lock.active)
+			__pm_relax(&mtk_musb->usb_lock);
+	}
+
+	schedule_delayed_work(&vbus_watchdog_work,
+			msecs_to_jiffies(VBUS_WATCHDOG_INTERVAL_MS));
+}
+
 void mt_usb_otg_init(struct musb *musb)
 {
 	/* BYPASS OTG function in special mode */
@@ -1159,6 +1215,9 @@ void mt_usb_otg_init(struct musb *musb)
 	musb->fifo_cfg_host = fifo_cfg_host;
 	musb->fifo_cfg_host_size = ARRAY_SIZE(fifo_cfg_host);
 
+	INIT_DELAYED_WORK(&vbus_watchdog_work, do_vbus_watchdog_work);
+	schedule_delayed_work(&vbus_watchdog_work,
+			msecs_to_jiffies(VBUS_WATCHDOG_INTERVAL_MS));
 }
 void mt_usb_otg_exit(struct musb *musb)
 {

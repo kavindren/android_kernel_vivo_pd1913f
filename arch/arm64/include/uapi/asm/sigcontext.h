@@ -71,7 +71,18 @@ struct fpsimd_context {
 	struct _aarch64_ctx head;
 	__u32 fpsr;
 	__u32 fpcr;
+#if defined(__LP64__)
 	__uint128_t vregs[32];
+#else
+	/* __uint128_t is not a valid type for 32-bit targets (e.g. clang -target
+	 * armv7a-...). This struct is only ever consumed by arm64 (LP64) code -
+	 * a 32-bit process never sees an arm64 sigcontext - so this arm-only
+	 * fallback exists purely so exported UAPI headers stay parseable when
+	 * pulled into an armv7 userspace build (see vendor/lineage/build/soong's
+	 * generated_kernel_includes, which exports these headers unconditionally
+	 * for both ABIs). */
+	unsigned long long vregs[32][2];
+#endif
 };
 
 /* ESR_EL1 context */

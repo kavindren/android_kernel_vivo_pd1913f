@@ -31,6 +31,7 @@
 #include <linux/uaccess.h>
 #include <linux/string.h>
 #include <linux/clk.h>
+#include <linux/pinctrl/consumer.h>
 #ifdef CONFIG_COMPAT
 #include <linux/compat.h>
 #endif
@@ -147,6 +148,9 @@ struct nqx_dev {
 	size_t kbuflen;
 	u8 *kbuf;
 	struct nqx_platform_data *pdata;
+	struct pinctrl *pinctrl;
+	struct pinctrl_state *pins_active;
+	struct pinctrl_state *pins_suspend;
 
 };
 
@@ -1228,6 +1232,35 @@ static int nqx_probe(struct i2c_client *client,
 	nqx_dev->irq_gpio = platform_data->irq_gpio;
 	nqx_dev->firm_gpio  = platform_data->firm_gpio;
 	nqx_dev->pdata = platform_data;
+
+	nqx_dev->pinctrl = devm_pinctrl_get(&client->dev);
+	if (IS_ERR(nqx_dev->pinctrl)) {
+		dev_warn(&client->dev, "%s: pinctrl not available\n", __func__);
+		nqx_dev->pinctrl = NULL;
+	} else {
+		nqx_dev->pins_active =
+			pinctrl_lookup_state(nqx_dev->pinctrl, "nfc_active");
+		if (IS_ERR(nqx_dev->pins_active)) {
+			dev_warn(&client->dev, "%s: nfc_active state not found\n",
+				__func__);
+			nqx_dev->pins_active = NULL;
+		}
+		nqx_dev->pins_suspend =
+			pinctrl_lookup_state(nqx_dev->pinctrl, "nfc_suspend");
+		if (IS_ERR(nqx_dev->pins_suspend)) {
+			dev_warn(&client->dev, "%s: nfc_suspend state not found\n",
+				__func__);
+			nqx_dev->pins_suspend = NULL;
+		}
+		if (nqx_dev->pins_active) {
+			r = pinctrl_select_state(nqx_dev->pinctrl,
+					nqx_dev->pins_active);
+			if (r)
+				dev_err(&client->dev,
+					"%s: unable to select nfc_active pinctrl state\n",
+					__func__);
+		}
+	}
 
 	/* init mutex and queues */
 	init_waitqueue_head(&nqx_dev->read_wq);

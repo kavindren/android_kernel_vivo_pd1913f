@@ -48,31 +48,6 @@
 #include <linux/string_helpers.h>
 #include "kstrtox.h"
 
-static unsigned long long simple_strntoull(const char *startp, size_t max_chars,
-					   char **endp, unsigned int base)
-{
-	const char *cp;
-	unsigned long long result = 0ULL;
-	size_t prefix_chars;
-	unsigned int rv;
-
-	cp = _parse_integer_fixup_radix(startp, &base);
-	prefix_chars = cp - startp;
-	if (prefix_chars < max_chars) {
-		rv = _parse_integer_limit(cp, base, &result, max_chars - prefix_chars);
-		/* FIXME */
-		cp += (rv & ~KSTRTOX_OVERFLOW);
-	} else {
-		/* Field too short for prefix + digit, skip over without converting */
-		cp = startp + max_chars;
-	}
-
-	if (endp)
-		*endp = (char *)cp;
-
-	return result;
-}
-
 /**
  * simple_strtoull - convert a string to an unsigned long long
  * @cp: The start of the string
@@ -83,7 +58,18 @@ static unsigned long long simple_strntoull(const char *startp, size_t max_chars,
  */
 unsigned long long simple_strtoull(const char *cp, char **endp, unsigned int base)
 {
-	return simple_strntoull(cp, INT_MAX, endp, base);
+	unsigned long long result;
+	unsigned int rv;
+
+	cp = _parse_integer_fixup_radix(cp, &base);
+	rv = _parse_integer(cp, base, &result);
+	/* FIXME */
+	cp += (rv & ~KSTRTOX_OVERFLOW);
+
+	if (endp)
+		*endp = (char *)cp;
+
+	return result;
 }
 EXPORT_SYMBOL(simple_strtoull);
 
@@ -118,21 +104,6 @@ long simple_strtol(const char *cp, char **endp, unsigned int base)
 }
 EXPORT_SYMBOL(simple_strtol);
 
-static long long simple_strntoll(const char *cp, size_t max_chars, char **endp,
-				 unsigned int base)
-{
-	/*
-	 * simple_strntoull() safely handles receiving max_chars==0 in the
-	 * case cp[0] == '-' && max_chars == 1.
-	 * If max_chars == 0 we can drop through and pass it to simple_strntoull()
-	 * and the content of *cp is irrelevant.
-	 */
-	if (*cp == '-' && max_chars > 0)
-		return -simple_strntoull(cp + 1, max_chars - 1, endp, base);
-
-	return simple_strntoull(cp, max_chars, endp, base);
-}
-
 /**
  * simple_strtoll - convert a string to a signed long long
  * @cp: The start of the string
@@ -143,7 +114,10 @@ static long long simple_strntoll(const char *cp, size_t max_chars, char **endp,
  */
 long long simple_strtoll(const char *cp, char **endp, unsigned int base)
 {
-	return simple_strntoll(cp, INT_MAX, endp, base);
+	if (*cp == '-')
+		return -simple_strtoull(cp + 1, endp, base);
+
+	return simple_strtoull(cp, endp, base);
 }
 EXPORT_SYMBOL(simple_strtoll);
 
@@ -1686,7 +1660,13 @@ char *pointer_string(char *buf, char *end, const void *ptr,
 static bool have_filled_random_ptr_key __read_mostly;
 static siphash_key_t ptr_key __read_mostly;
 
-static void fill_random_ptr_key(struct random_ready_callback *unused)
+/*
+ * v4.14.336 replaced the random_ready_callback API with a notifier_block
+ * (register_random_ready_notifier); adapt this backported %p-hashing init
+ * accordingly.
+ */
+static int fill_random_ptr_key(struct notifier_block *nb,
+			       unsigned long action, void *data)
 {
 	get_random_bytes(&ptr_key, sizeof(ptr_key));
 	/*
@@ -1696,20 +1676,26 @@ static void fill_random_ptr_key(struct random_ready_callback *unused)
 	 */
 	smp_mb();
 	WRITE_ONCE(have_filled_random_ptr_key, true);
+	return 0;
 }
 
-static struct random_ready_callback random_ready = {
-	.func = fill_random_ptr_key
+static struct notifier_block random_ready = {
+	.notifier_call = fill_random_ptr_key
 };
 
 static int __init initialize_ptr_random(void)
 {
-	int ret = add_random_ready_callback(&random_ready);
+	int ret;
 
-	if (!ret) {
+	if (rng_is_initialized()) {
+		fill_random_ptr_key(&random_ready, 0, NULL);
 		return 0;
-	} else if (ret == -EALREADY) {
-		fill_random_ptr_key(&random_ready);
+	}
+
+	ret = register_random_ready_notifier(&random_ready);
+	if (!ret || ret == -EALREADY) {
+		if (ret == -EALREADY)
+			fill_random_ptr_key(&random_ready, 0, NULL);
 		return 0;
 	}
 
@@ -3121,13 +3107,25 @@ int vsscanf(const char *buf, const char *fmt, va_list args)
 			break;
 
 		if (is_sign)
-			val.s = simple_strntoll(str,
-						field_width >= 0 ? field_width : INT_MAX,
-						&next, base);
+			val.s = qualifier != 'L' ?
+				simple_strtol(str, &next, base) :
+				simple_strtoll(str, &next, base);
 		else
-			val.u = simple_strntoull(str,
-						 field_width >= 0 ? field_width : INT_MAX,
-						 &next, base);
+			val.u = qualifier != 'L' ?
+				simple_strtoul(str, &next, base) :
+				simple_strtoull(str, &next, base);
+
+		if (field_width > 0 && next - str > field_width) {
+			if (base == 0)
+				_parse_integer_fixup_radix(str, &base);
+			while (next - str > field_width) {
+				if (is_sign)
+					val.s = div_s64(val.s, base);
+				else
+					val.u = div_u64(val.u, base);
+				--next;
+			}
+		}
 
 		switch (qualifier) {
 		case 'H':	/* that's 'hh' in format */

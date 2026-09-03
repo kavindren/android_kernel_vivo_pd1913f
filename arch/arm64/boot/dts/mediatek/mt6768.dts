@@ -53,7 +53,7 @@
 
 	/* chosen */
 	chosen: chosen {
-		bootargs = "console=tty0 console=ttyS0,921600n1 vmalloc=400M swiotlb=noforce printk.devkmsg=on firmware_class.path=/vendor/firmware androidboot.selinux=permissive sysctl.kernel.dmesg_restrict=0 kernel.dmesg_restrict=0";
+		bootargs = "vmalloc=400M swiotlb=noforce printk.devkmsg=on firmware_class.path=/vendor/firmware androidboot.selinux=enforcing sysctl.kernel.dmesg_restrict=0 kernel.dmesg_restrict=0";
 		kaslr-seed = <0 0>;
 	};
 

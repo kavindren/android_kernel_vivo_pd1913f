@@ -172,6 +172,11 @@ extern unsigned int lcm_imei_str[4];
 int lcm_acl_status;
 extern unsigned int bl_brightness_hal;
 atomic_t oled_hbm_status =  ATOMIC_INIT(HBM_UDFP_RESUME_MODE_OFF);
+/* vivo 1907N UDFPS: while set, per-frame forced HBM-off (see primary_display_config_frame)
+ * is skipped, so a raw oled_hbm sysfs write survives across frames instead of being
+ * stomped by cfg->hbm_en every vsync. Must only be held between finger-down and
+ * finger-up (userspace enforces the window via vendor.udfps.hbm_state). */
+atomic_t oled_hbm_force_hold = ATOMIC_INIT(0);
 #ifndef CONFIG_LCM_PANEL_TYPE_TFT
 atomic_t doze_mode_state =  ATOMIC_INIT(LCM_PANEL_ON);
 int vivo_sre_enable;
@@ -7252,7 +7257,8 @@ int primary_display_frame_cfg(struct disp_frame_cfg_t *cfg)
 #ifndef CONFIG_LCM_PANEL_TYPE_TFT
 	if (disp_helper_get_option(DISP_OPT_LCM_HBM)) {
 		/**** only enable  hbm when panel resume with alpha frame */
-		if ((primary_display_get_power_mode_nolock() == FB_RESUME) && (current_backlight > 0) && (silent_reboot != 1)) {
+		if (!atomic_read(&oled_hbm_force_hold) &&
+			(primary_display_get_power_mode_nolock() == FB_RESUME) && (current_backlight > 0) && (silent_reboot != 1)) {
 			primary_display_set_lcm_hbm(5-(int)cfg->hbm_en);
 			/*primary_display_hbm_wait(5-(int)cfg->hbm_en);*/
 		}
@@ -10347,6 +10353,26 @@ static ssize_t oled_hbm_store(struct device *dev, struct device_attribute *attr,
 	return count;
 }
 
+/* vivo 1907N UDFPS: userspace holds this at 1 strictly between finger-down and
+ * finger-up (see init.udfps-hbm.rc) so oled_hbm_store()'s direct MIPI write above
+ * isn't stomped back off by the per-frame cfg->hbm_en path every vsync. */
+static ssize_t oled_hbm_force_hold_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", atomic_read(&oled_hbm_force_hold));
+}
+static ssize_t oled_hbm_force_hold_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret, val;
+
+	ret = kstrtoint(buf, 10, &val);
+	if (ret) {
+		LCM_ERR("Invalid input for oled_hbm_force_hold store\n");
+		return ret;
+	}
+	atomic_set(&oled_hbm_force_hold, val ? 1 : 0);
+	return count;
+}
+
 /*show dimming speed  state*/
 #ifndef CONFIG_LCM_PANEL_TYPE_TFT
 static ssize_t dimming_speed_show(struct device *dev, struct device_attribute *attr, char *buf)
@@ -10665,6 +10691,7 @@ static DEVICE_ATTR(oled_acl, 0644, oled_acl_show, oled_acl_store);
 #endif
 static DEVICE_ATTR(colour_gamut, 0644, vivo_colour_gamut_show, vivo_colour_gamut_store);
 static DEVICE_ATTR(oled_hbm, 0644, oled_hbm_show, oled_hbm_store);
+static DEVICE_ATTR(oled_hbm_force_hold, 0644, oled_hbm_force_hold_show, oled_hbm_force_hold_store);
 static DEVICE_ATTR(oled_alpmmode, 0644, oled_alpmmode_show, oled_alpmmode_store);
 static DEVICE_ATTR(oled_hlpmmode, 0644, oled_hlpmmode_show, oled_hlpmmode_store);
 static DEVICE_ATTR(mipi_dsireg, 0644, NULL, mipi_dsireg_store);
@@ -10696,6 +10723,7 @@ static struct attribute *disp_lcm_sys_attrs[] = {
 	&dev_attr_oled_acl.attr,
 #endif
 	&dev_attr_oled_hbm.attr,
+	&dev_attr_oled_hbm_force_hold.attr,
 	&dev_attr_oled_alpmmode.attr,
 	&dev_attr_oled_hlpmmode.attr,
 	&dev_attr_mipi_dsireg.attr,

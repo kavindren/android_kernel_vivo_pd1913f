@@ -163,7 +163,12 @@ int mtk_chr_is_charger_exist(unsigned char *exist)
 }
 
 /*=============== fix me==================*/
-int chargerlog_level = CHRLOG_ERROR_LEVEL;
+/* Temporarily bumped to CHRLOG_DEBUG_LEVEL to diagnose the screen-off charging stall
+ * (ChrStat jumping straight to termination-done right at screen-off, no recharge cycling
+ * afterwards) - this unlocks bq25890_dump_register()'s full raw register table via
+ * chr_debug(), which is otherwise silent at the default error level. Revert back to
+ * CHRLOG_ERROR_LEVEL once diagnosed. */
+int chargerlog_level = CHRLOG_DEBUG_LEVEL;
 
 int chr_get_debug_level(void)
 {

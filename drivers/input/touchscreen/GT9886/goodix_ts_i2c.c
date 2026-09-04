@@ -308,8 +308,10 @@ static int goodix_parse_dt(struct device_node *node,
 	r = of_property_read_string(node,
 			"goodix,config-version",
 			&gt9886_config_buf);
-	if (r < 0)
+	if (r < 0) {
 		ts_err("Invalid config version in dts : %d", r);
+		return -EINVAL;
+	}
 
 	board_data->avdd_name = "vtouch";
 	r = of_property_read_u32(node, "goodix,power-on-delay-us",

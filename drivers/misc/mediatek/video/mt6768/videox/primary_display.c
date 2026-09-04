@@ -229,7 +229,7 @@ struct vivo_panel_info {
 struct vivo_panel_info vinfo;
 /*lcm driver end */
 int _set_vivo_MipiCmd_HS(unsigned char cmdtype, unsigned char levelsetting);
-EXPORT_SYMBOL(mdss_report_lcm_id);
+EXPORT_SYMBOL_GPL(mdss_report_lcm_id);
 #ifdef CONFIG_BBK_LCM_TEMPERATURE_COMPENSATION
 static void work_set_lcm_temperature_compensation(struct work_struct *work);
 static int elvss_temperature;
@@ -10857,6 +10857,6 @@ int mdss_dsi_panel_reset_and_powerctl(int enable)
 
 	return ret;
 }
-EXPORT_SYMBOL(mdss_dsi_panel_reset_and_powerctl);
+EXPORT_SYMBOL_GPL(mdss_dsi_panel_reset_and_powerctl);
 
 

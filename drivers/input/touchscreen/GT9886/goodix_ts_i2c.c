@@ -2380,6 +2380,7 @@ static int goodix_i2c_remove(struct i2c_client *client)
 #ifdef CONFIG_OF
 static const struct of_device_id i2c_matchs[] = {
 	{.compatible = TS_DT_COMPATIBLE,},
+	{.compatible = "goodix,gt9886_V2",},
 	{},
 };
 MODULE_DEVICE_TABLE(of, i2c_matchs);

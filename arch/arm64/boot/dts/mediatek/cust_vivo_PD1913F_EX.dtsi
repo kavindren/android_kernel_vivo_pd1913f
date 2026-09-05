@@ -1152,7 +1152,6 @@
 		compatible = "ti,bq25890h";
 		reg = <0x6a>;
 
-		charger_name = "secondary_chg";
 		vivo,int-gpio = <&pio 3 0>;
 	};
 
@@ -1160,7 +1159,6 @@
 		compatible = "ti,bq25601d";
 		reg = <0x6b>;
 
-		charger_name = "primary_chg";
 		vivo,int-gpio = <&pio 20 0>;
 		vivo,enable-gpio = <&pio 166 0>;
 	};

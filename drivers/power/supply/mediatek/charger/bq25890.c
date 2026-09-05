@@ -166,21 +166,10 @@ struct bq25890_info {
 	enum charger_type chg_type;
 	int irq;
 	bool plugged;
-	unsigned long last_plugout_jiffies;
 
 	struct delayed_work boot_recheck_work;
 	struct delayed_work recheck_work;
 };
-
-/*
- * On this board VBUS does not collapse cleanly on physical unplug: every
- * cable pull produces one deterministic intermediate PG re-assert, which
- * the plug-in path below would otherwise treat as a real connect
- * (CHARGER_UNKNOWN -> STANDARD_HOST) and notify the framework, making
- * SystemUI play the charging-connected sound + vibration on every unplug.
- * Ignore a plug-in that lands within this window of the last plug-out.
- */
-#define BQ25890_PLUGIN_DEBOUNCE_MS 500
 
 static int bq25890_set_charger_type(struct bq25890_info *info);
 
@@ -1907,13 +1896,6 @@ static irqreturn_t bq25890_irq_handler(int irq, void *data)
 	org_chg_type = info->chg_type;
 
 	if (pg_stat && !info->plugged) {
-		if (info->last_plugout_jiffies &&
-		    time_before(jiffies, info->last_plugout_jiffies +
-				msecs_to_jiffies(BQ25890_PLUGIN_DEBOUNCE_MS))) {
-			pr_info("%s: ignoring plug-in within %dms of plugout (VBUS bounce)\n",
-				__func__, BQ25890_PLUGIN_DEBOUNCE_MS);
-			return IRQ_HANDLED;
-		}
 		info->plugged = true;
 		/*
 		 * Match TI's own bq2589x reference driver here: BC1.2
@@ -1941,7 +1923,6 @@ static irqreturn_t bq25890_irq_handler(int irq, void *data)
 		schedule_delayed_work(&info->recheck_work, msecs_to_jiffies(1500));
 	} else if (!pg_stat) {
 		info->plugged = false;
-		info->last_plugout_jiffies = jiffies;
 		cancel_delayed_work(&info->recheck_work);
 		#if defined(CONFIG_PROJECT_PHY) || defined(CONFIG_PHY_MTK_SSUSB)
 		Charger_Detect_Init();

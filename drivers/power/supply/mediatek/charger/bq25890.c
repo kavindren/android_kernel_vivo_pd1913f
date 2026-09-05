@@ -1940,8 +1940,17 @@ static irqreturn_t bq25890_irq_handler(int irq, void *data)
 		info->chg_type = bq25890_get_charger_type(info);
 		schedule_delayed_work(&info->recheck_work, msecs_to_jiffies(1500));
 	} else if (!pg_stat) {
+		/*
+		 * Only stamp the debounce timestamp on a real plugged -> unplugged
+		 * edge. This branch also runs for the chip's periodic fault/status
+		 * IRQs while already unplugged - stamping there kept last_plugout_
+		 * jiffies pinned to "now", so every subsequent plug-in fell inside
+		 * the debounce window and was dropped, and the charger was never
+		 * detected at all.
+		 */
+		if (info->plugged)
+			info->last_plugout_jiffies = jiffies;
 		info->plugged = false;
-		info->last_plugout_jiffies = jiffies;
 		cancel_delayed_work(&info->recheck_work);
 		#if defined(CONFIG_PROJECT_PHY) || defined(CONFIG_PHY_MTK_SSUSB)
 		Charger_Detect_Init();

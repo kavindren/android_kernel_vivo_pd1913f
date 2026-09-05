@@ -3557,7 +3557,7 @@ defined(CONFIG_MTK_CAM_SECURITY_SUPPORT)
 	charger: charger {
 		compatible = "mediatek,charger";
 		algorithm_name = "SwitchCharging";
-		/* enable_sw_jeita; */
+		enable_sw_jeita;
 		/* enable_pe_plus; */
 		enable_pe_2;
 		/* enable_pe_3; */

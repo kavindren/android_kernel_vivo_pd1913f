@@ -3596,8 +3596,23 @@ void bmd_ctrl_cmd_from_user(void *nl_data, struct fgd_nl_msg_t *ret_msg)
 
 				curr_bat_vol =
 					battery_get_bat_voltage() * 10;
-				if (gm.ptim_lk_v == 0)
-					ptim_bat_vol = curr_bat_vol;
+				if (gm.ptim_lk_v == 0) {
+					/*
+					 * No LK-injected PTIM OCV (atag,fg_swocv_v)
+					 * on this bootloader. battery_get_bat_voltage()
+					 * here is measured under the early-boot load and
+					 * reads far below OCV (~3.7 V vs ~4.2 V), so the
+					 * recovery-path D0 init lands ~30 pts low. Use the
+					 * PMIC's latched power-on OCV instead; fall back to
+					 * the loaded reading only if it looks invalid.
+					 */
+					int hwocv = gauge_get_hwocv();
+
+					ptim_bat_vol =
+						(hwocv > 30000) ? hwocv : curr_bat_vol;
+					bm_err("[fr] no ptim_lk_v: hwocv=%d loaded=%d -> %d\n",
+						hwocv, curr_bat_vol, ptim_bat_vol);
+				}
 
 				bm_err("[fr] PTIM_LK V %d I %d,curr_bat_vol=%d\n",
 					ptim_bat_vol, ptim_R_curr,

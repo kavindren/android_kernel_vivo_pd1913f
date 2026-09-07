@@ -3568,7 +3568,9 @@ defined(CONFIG_MTK_CAM_SECURITY_SUPPORT)
 		disable_pd_dual;
 
 		/* common */
-		battery_cv = <4350000>;
+		/* cell is rated 4.43V (stock vivo,vreg-voltage-mv); charge to
+		 * 4.40V as a longevity compromise instead of the old 4.35V. */
+		battery_cv = <4400000>;
 		max_charger_voltage = <6500000>;
 		min_charger_voltage = <4600000>;
 
@@ -3592,10 +3594,13 @@ defined(CONFIG_MTK_CAM_SECURITY_SUPPORT)
 		apple_2_1a_charger_current = <800000>;
 		ta_ac_charger_current = <3000000>;
 
-		/* sw jeita */
+		/* sw jeita -- t2_to_t3 is the normal 10..45C band; raise it to
+		 * the 4.40V global CV (was 4.34V, which forced an early, long
+		 * CV taper and capped usable capacity). Hot/cold bands stay
+		 * conservative. */
 		jeita_temp_above_t4_cv = <4240000>;
 		jeita_temp_t3_to_t4_cv = <4240000>;
-		jeita_temp_t2_to_t3_cv = <4340000>;
+		jeita_temp_t2_to_t3_cv = <4400000>;
 		jeita_temp_t1_to_t2_cv = <4240000>;
 		jeita_temp_t0_to_t1_cv = <4040000>;
 		jeita_temp_below_t0_cv = <4040000>;

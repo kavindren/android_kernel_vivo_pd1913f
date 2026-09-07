@@ -130,7 +130,43 @@ static enum power_supply_property battery_props[] = {
 	POWER_SUPPLY_PROP_CAPACITY_LEVEL,
 	POWER_SUPPLY_PROP_TIME_TO_FULL_NOW,
 	POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
+	POWER_SUPPLY_PROP_CURRENT_MAX,
+	POWER_SUPPLY_PROP_VOLTAGE_MAX,
 };
+
+/*
+ * Advertised charging capability for the detected charger type. The health HAL
+ * reads CURRENT_MAX/VOLTAGE_MAX from the "battery" supply to feed SystemUI's
+ * charging-speed label; nothing here populated them before ("Max charging
+ * current: 0" in dumpsys), so a DCP/PE session never showed as fast charging.
+ * These are the port's advertised capability, not a live measurement.
+ */
+static void batt_charge_capability(int *cur_ua, int *volt_uv)
+{
+	*volt_uv = 5000000;
+	switch (mt_get_charger_type()) {
+	case STANDARD_CHARGER:		/* DCP (PE2.0-capable on this device) */
+		*cur_ua = 2000000;
+		break;
+	case CHARGING_HOST:		/* CDP */
+	case NONSTANDARD_CHARGER:
+		*cur_ua = 1500000;
+		break;
+	case APPLE_2_1A_CHARGER:
+		*cur_ua = 2100000;
+		break;
+	case APPLE_1_0A_CHARGER:
+		*cur_ua = 1000000;
+		break;
+	case STANDARD_HOST:		/* SDP */
+		*cur_ua = 500000;
+		break;
+	default:			/* not charging / unknown */
+		*cur_ua = 0;
+		*volt_uv = 0;
+		break;
+	}
+}
 
 /* weak function */
 int __attribute__ ((weak))
@@ -529,6 +565,20 @@ static int battery_get_property(struct power_supply *psy,
 			val->intval = q_max_uah;
 		}
 		break;
+	case POWER_SUPPLY_PROP_CURRENT_MAX: {
+		int cur_ua, volt_uv;
+
+		batt_charge_capability(&cur_ua, &volt_uv);
+		val->intval = cur_ua;
+		break;
+	}
+	case POWER_SUPPLY_PROP_VOLTAGE_MAX: {
+		int cur_ua, volt_uv;
+
+		batt_charge_capability(&cur_ua, &volt_uv);
+		val->intval = volt_uv;
+		break;
+	}
 
 
 	default:

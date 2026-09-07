@@ -1256,7 +1256,8 @@ static int bq25890_set_charger_type(struct bq25890_info *info)
 	int ret = 0;
 	union power_supply_propval propval;
 
-#if defined(CONFIG_PROJECT_PHY) || defined(CONFIG_PHY_MTK_SSUSB)
+#if defined(CONFIG_PROJECT_PHY) || defined(CONFIG_PHY_MTK_SSUSB) || \
+	defined(CONFIG_USB_MTK_HDRC)
 	if (info->chg_type == STANDARD_HOST ||
 	    info->chg_type == CHARGING_HOST)
 		Charger_Detect_Release();
@@ -1899,6 +1900,13 @@ static irqreturn_t bq25890_irq_handler(int irq, void *data)
 
 	if (pg_stat && !info->plugged) {
 		info->plugged = true;
+#if defined(CONFIG_PROJECT_PHY) || defined(CONFIG_PHY_MTK_SSUSB) || \
+	defined(CONFIG_USB_MTK_HDRC)
+		/* Hand D+/D- from the USB PHY to the BC1.2 block (sets
+		 * RG_USB20_BC11_SW_EN) so force_dpdm below sees the real
+		 * adapter. Without this a DCP short reads as Non-Standard. */
+		Charger_Detect_Init();
+#endif
 		/*
 		 * Run BC1.2 detection actively on the plug-in transition.
 		 * The chip's autonomous AUTO_DPDM does not reliably classify
@@ -1932,7 +1940,8 @@ static irqreturn_t bq25890_irq_handler(int irq, void *data)
 	} else if (!pg_stat) {
 		info->plugged = false;
 		cancel_delayed_work(&info->recheck_work);
-		#if defined(CONFIG_PROJECT_PHY) || defined(CONFIG_PHY_MTK_SSUSB)
+		#if defined(CONFIG_PROJECT_PHY) || defined(CONFIG_PHY_MTK_SSUSB) || \
+			defined(CONFIG_USB_MTK_HDRC)
 		Charger_Detect_Init();
 		#endif
 		info->chg_type = CHARGER_UNKNOWN;
@@ -2125,7 +2134,8 @@ static int bq25890_driver_probe(struct i2c_client *client, const struct i2c_devi
 
 	/* Force charger type detection */
 
-#if defined(CONFIG_PROJECT_PHY) || defined(CONFIG_PHY_MTK_SSUSB)
+#if defined(CONFIG_PROJECT_PHY) || defined(CONFIG_PHY_MTK_SSUSB) || \
+	defined(CONFIG_USB_MTK_HDRC)
 	Charger_Detect_Init();
 #endif
 	msleep(50);

@@ -289,10 +289,41 @@ static int mt_charger_set_property(struct power_supply *psy,
 	return 0;
 }
 
+/*
+ * Advertised charging capability by detected charger type, so the health HAL
+ * (which reads current_max/voltage_max from the online charger supply) can feed
+ * SystemUI's charging-speed label. Values are the port's advertised capability,
+ * not a live measurement.
+ */
+static void mt_charger_max_capability(enum charger_type type,
+	int *cur_ua, int *volt_uv)
+{
+	*volt_uv = 5000000;
+	switch (type) {
+	case STANDARD_CHARGER:		/* DCP (PE2.0-capable on this device) */
+		*cur_ua = 2000000;
+		break;
+	case CHARGING_HOST:		/* CDP */
+	case NONSTANDARD_CHARGER:
+		*cur_ua = 1500000;
+		break;
+	case APPLE_2_1A_CHARGER:
+		*cur_ua = 2100000;
+		break;
+	case APPLE_1_0A_CHARGER:
+		*cur_ua = 1000000;
+		break;
+	default:			/* SDP / unknown */
+		*cur_ua = 500000;
+		break;
+	}
+}
+
 static int mt_ac_get_property(struct power_supply *psy,
 	enum power_supply_property psp, union power_supply_propval *val)
 {
 	struct mt_charger *mtk_chg = power_supply_get_drvdata(psy);
+	int cur_ua, volt_uv;
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_ONLINE:
@@ -304,6 +335,14 @@ static int mt_ac_get_property(struct power_supply *psy,
 		if ((mtk_chg->chg_type == STANDARD_HOST) ||
 			(mtk_chg->chg_type == CHARGING_HOST))
 			val->intval = 0;
+		break;
+	case POWER_SUPPLY_PROP_CURRENT_MAX:
+		mt_charger_max_capability(mtk_chg->chg_type, &cur_ua, &volt_uv);
+		val->intval = cur_ua;
+		break;
+	case POWER_SUPPLY_PROP_VOLTAGE_MAX:
+		mt_charger_max_capability(mtk_chg->chg_type, &cur_ua, &volt_uv);
+		val->intval = volt_uv;
 		break;
 	default:
 		return -EINVAL;
@@ -325,9 +364,13 @@ static int mt_usb_get_property(struct power_supply *psy,
 		else
 			val->intval = 0;
 		break;
-	case POWER_SUPPLY_PROP_CURRENT_MAX:
-		val->intval = 500000;
+	case POWER_SUPPLY_PROP_CURRENT_MAX: {
+		int cur_ua, volt_uv;
+
+		mt_charger_max_capability(mtk_chg->chg_type, &cur_ua, &volt_uv);
+		val->intval = cur_ua;
 		break;
+	}
 	case POWER_SUPPLY_PROP_VOLTAGE_MAX:
 		val->intval = 5000000;
 		break;
@@ -344,6 +387,8 @@ static enum power_supply_property mt_charger_properties[] = {
 
 static enum power_supply_property mt_ac_properties[] = {
 	POWER_SUPPLY_PROP_ONLINE,
+	POWER_SUPPLY_PROP_CURRENT_MAX,
+	POWER_SUPPLY_PROP_VOLTAGE_MAX,
 };
 
 static enum power_supply_property mt_usb_properties[] = {

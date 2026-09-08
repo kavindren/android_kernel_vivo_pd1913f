@@ -28,13 +28,13 @@ def parse(fdt, bat_id):
     txt = open(fdt).read()
     prof = []
     for t in range(5):
-        m = re.search(rf'vivo_battery0_profile_t{t} = <([^>]+)>', txt, re.S)
+        m = re.search(rf'vivo_battery{bat_id}_profile_t{t} = <([^>]+)>', txt, re.S)
         v = [int(x, 0) for x in m.group(1).split()]
         prof.append([(v[i], v[i+1], v[i+2]) for i in range(0, len(v), 3)])  # (pct, mV, mOhm)
     m = re.search(r'vivo,bats-qmax = <([^>]+)>', txt)
     q = [int(x, 0) for x in m.group(1).split()]
-    # layout: 6 aging rows x 5 temps; fresh = row 0
-    qmax_fresh = q[0:5]                      # per vivo temp bin, mAh
+    # layout: [battery-id][5 vivo temp bins], mAh; take this unit's id
+    qmax_fresh = q[bat_id * 5: bat_id * 5 + 5]
     return prof, qmax_fresh
 
 def interp_at(table, pct):

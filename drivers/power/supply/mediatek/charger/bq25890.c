@@ -2126,6 +2126,19 @@ static int bq25890_driver_probe(struct i2c_client *client, const struct i2c_devi
 	bq25890_hw_component_detect();
 	/* bq25890_hw_init(); //move to charging_hw_xxx.c */
 
+	/*
+	 * REG08 battery-impedance compensation. Nothing in this tree calls
+	 * the charger_dev set_ircmp ops (the vivo layer that did is stripped),
+	 * so BAT_COMP/VCLAMP stayed 0 and the charger hard-clamped the sensed
+	 * VBAT at battery_cv - CC current collapsed to a few hundred mA well
+	 * before the cell was actually full. Match stock's charger-node
+	 * ircmp_resistor=25mohm / ircmp_vclamp=32mV: BAT_COMP idx 1 (20mohm,
+	 * nearest), VCLAMP idx 1 (32mV). Lets the loop drive up to
+	 * cv + min(Ichg*20mohm, 32mV) in CC.
+	 */
+	bq25890_set_VBAT_IR_compensation(1);
+	bq25890_set_VBAT_clamp(1);
+
 	info->psy = power_supply_get_by_name("charger");
 	if (!info->psy) {
 		pr_err("%s: get power supply failed\n", __func__);

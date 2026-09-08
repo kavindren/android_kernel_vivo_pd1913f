@@ -2179,14 +2179,18 @@ static int bq25890_driver_probe(struct i2c_client *client, const struct i2c_devi
 	 * the charger_dev set_ircmp ops (the vivo layer that did is stripped),
 	 * so BAT_COMP/VCLAMP stayed 0 and the charger hard-clamped the sensed
 	 * VBAT at battery_cv - CC current collapsed to a few hundred mA well
-	 * before the cell was actually full. Stock asks for 25mohm/32mV but
-	 * this unit's charge-path drop is higher (CV taper still started near
-	 * 60% real SOC at 20mohm/32mV), so use BAT_COMP idx 2 (40mohm) and
-	 * VCLAMP idx 2 (64mV): the loop may drive the sense point up to
-	 * cv + min(Ichg*40mohm, 64mV) in CC.
+	 * before the cell was actually full. Stock asks for 25mohm/32mV, but
+	 * stock also steps CC down by SOC; we run flat ~2.9A CC, and the
+	 * measured cell resistance is 80mohm (POWER_SUPPLY_RESISTANCE from the
+	 * stock gauge), so at 2.9A the terminal sits ~230mV above OCV and the
+	 * loop hits CV near 70% real SOC. Compensate ~half of that: BAT_COMP
+	 * idx 2 (40mohm, half the real IR to stay clear of overshoot) and
+	 * VCLAMP idx 3 (128mV) so the 40mohm term is not re-clamped until
+	 * ~3.2A. The loop may drive the sense point to cv + min(Ichg*40mohm,
+	 * 128mV) in CC; the CV knee then moves to ~83% real SOC.
 	 */
 	bq25890_set_VBAT_IR_compensation(2);
-	bq25890_set_VBAT_clamp(2);
+	bq25890_set_VBAT_clamp(3);
 
 	info->psy = power_supply_get_by_name("charger");
 	if (!info->psy) {

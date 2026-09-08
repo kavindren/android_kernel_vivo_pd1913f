@@ -169,6 +169,7 @@ struct bq25890_info {
 
 	struct delayed_work boot_recheck_work;
 	struct delayed_work recheck_work;
+	struct delayed_work plugout_work;
 };
 
 static int bq25890_set_charger_type(struct bq25890_info *info);
@@ -1877,6 +1878,33 @@ static void bq25890_recheck_charger_type(struct work_struct *work)
 		bq25890_set_charger_type(info);
 }
 
+/*
+ * Debounced plug-out. A live PE2.0 session drops VBUS for ~1 s during TA
+ * re-negotiation, which looks identical to a real unplug. Commit the
+ * unplug (clear type, hand D+/D- back, notify) only if PG is still gone
+ * ~1.2 s later; otherwise it was a transient and the type is kept.
+ */
+static void bq25890_plugout_work(struct work_struct *work)
+{
+	struct bq25890_info *info = container_of(to_delayed_work(work),
+						struct bq25890_info, plugout_work);
+
+	if (bq25890_get_pg_state()) {
+		pr_info("%s: transient VBUS drop, keep type %d\n",
+			__func__, info->chg_type);
+		return;
+	}
+
+	info->plugged = false;
+#if defined(CONFIG_PROJECT_PHY) || defined(CONFIG_PHY_MTK_SSUSB) || \
+	defined(CONFIG_USB_MTK_HDRC)
+	Charger_Detect_Init();
+#endif
+	info->chg_type = CHARGER_UNKNOWN;
+	bq25890_set_charger_type(info);
+	pr_info("%s: plugout committed\n", __func__);
+}
+
 static irqreturn_t bq25890_irq_handler(int irq, void *data)
 {
 	u8 pg_stat = 0;
@@ -1898,8 +1926,24 @@ static irqreturn_t bq25890_irq_handler(int irq, void *data)
 	pg_stat = bq25890_get_pg_state();
 	org_chg_type = info->chg_type;
 
+	cancel_delayed_work(&info->plugout_work);
+
 	if (pg_stat && !info->plugged) {
 		info->plugged = true;
+		/*
+		 * Only run BC1.2 when the type is genuinely unknown. A live
+		 * PE2.0 session can briefly drop and re-assert VBUS (TA
+		 * re-negotiation); that fires a plug-out/plug-in pair, and
+		 * re-toggling D+/D- (Charger_Detect_Init) plus a 5 s
+		 * force_dpdm poll in the middle of PE handshaking makes PE
+		 * collapse -> another VBUS drop -> oscillation. If we already
+		 * classified this adapter, leave D+/D- alone.
+		 */
+		if (info->chg_type != CHARGER_UNKNOWN &&
+		    info->chg_type != STANDARD_HOST) {
+			info->chg_type = bq25890_get_charger_type(info);
+			goto skip_bc12;
+		}
 #if defined(CONFIG_PROJECT_PHY) || defined(CONFIG_PHY_MTK_SSUSB) || \
 	defined(CONFIG_USB_MTK_HDRC)
 		/* Hand D+/D- from the USB PHY to the BC1.2 block (sets
@@ -1937,15 +1981,19 @@ static irqreturn_t bq25890_irq_handler(int irq, void *data)
 		}
 		info->chg_type = bq25890_get_charger_type(info);
 		schedule_delayed_work(&info->recheck_work, msecs_to_jiffies(1500));
-	} else if (!pg_stat) {
-		info->plugged = false;
+skip_bc12:
+		;
+	} else if (!pg_stat && info->plugged) {
 		cancel_delayed_work(&info->recheck_work);
-		#if defined(CONFIG_PROJECT_PHY) || defined(CONFIG_PHY_MTK_SSUSB) || \
-			defined(CONFIG_USB_MTK_HDRC)
-		Charger_Detect_Init();
-		#endif
-		info->chg_type = CHARGER_UNKNOWN;
-		pr_info("%s: plugout\n", __func__);
+		/*
+		 * Only a DCP can run PE2.0, and only PE2.0 TA re-negotiation
+		 * yanks VBUS for ~1s while still plugged. Debounce that case;
+		 * for SDP/CDP/non-standard there is no such blip, so commit the
+		 * unplug immediately (plugout_work still re-checks PG).
+		 */
+		schedule_delayed_work(&info->plugout_work,
+			info->chg_type == STANDARD_CHARGER ?
+				msecs_to_jiffies(1200) : 0);
 	}
 
 	if (info->chg_type != org_chg_type)
@@ -2131,13 +2179,14 @@ static int bq25890_driver_probe(struct i2c_client *client, const struct i2c_devi
 	 * the charger_dev set_ircmp ops (the vivo layer that did is stripped),
 	 * so BAT_COMP/VCLAMP stayed 0 and the charger hard-clamped the sensed
 	 * VBAT at battery_cv - CC current collapsed to a few hundred mA well
-	 * before the cell was actually full. Match stock's charger-node
-	 * ircmp_resistor=25mohm / ircmp_vclamp=32mV: BAT_COMP idx 1 (20mohm,
-	 * nearest), VCLAMP idx 1 (32mV). Lets the loop drive up to
-	 * cv + min(Ichg*20mohm, 32mV) in CC.
+	 * before the cell was actually full. Stock asks for 25mohm/32mV but
+	 * this unit's charge-path drop is higher (CV taper still started near
+	 * 60% real SOC at 20mohm/32mV), so use BAT_COMP idx 2 (40mohm) and
+	 * VCLAMP idx 2 (64mV): the loop may drive the sense point up to
+	 * cv + min(Ichg*40mohm, 64mV) in CC.
 	 */
-	bq25890_set_VBAT_IR_compensation(1);
-	bq25890_set_VBAT_clamp(1);
+	bq25890_set_VBAT_IR_compensation(2);
+	bq25890_set_VBAT_clamp(2);
 
 	info->psy = power_supply_get_by_name("charger");
 	if (!info->psy) {
@@ -2178,6 +2227,7 @@ static int bq25890_driver_probe(struct i2c_client *client, const struct i2c_devi
 
 	INIT_DELAYED_WORK(&info->recheck_work, bq25890_recheck_charger_type);
 	INIT_DELAYED_WORK(&info->boot_recheck_work, bq25890_boot_recheck_work);
+	INIT_DELAYED_WORK(&info->plugout_work, bq25890_plugout_work);
 	if (pg_stat)
 		schedule_delayed_work(&info->boot_recheck_work,
 							  msecs_to_jiffies(8000));

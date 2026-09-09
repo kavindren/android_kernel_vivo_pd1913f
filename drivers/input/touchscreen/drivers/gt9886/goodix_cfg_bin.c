@@ -253,7 +253,15 @@ int goodix_cfg_bin_proc_V2(struct vts_device *vtsdev, const struct firmware *fir
 	/* inform the external module manager that
 	 * touch core layer is ready now */
 
-/*#ifdef CONFIG_FB
+	/*
+	 * Restore the fb blank notifier. On this LOS build the vts layer never
+	 * hears about a plain (non-AOD) screen-off - vts_incell only registers
+	 * for TDDI panels and nothing writes vts_lcd - so without this the IC
+	 * never suspends / never enters gesture scan on screen-off and
+	 * double-tap-to-wake only works under AOD. CONFIG_FB=y here and
+	 * fb_blank() fires FB_EVENT_BLANK on the FBIOBLANK screen-off path.
+	 */
+#ifdef CONFIG_FB
 	core_data->fb_notifier.notifier_call = goodix_ts_fb_notifier_callback_V2;
 	if (fb_register_client(&core_data->fb_notifier))
 		VTE("Failed to register fb notifier client:%d", r);
@@ -262,7 +270,7 @@ int goodix_cfg_bin_proc_V2(struct vts_device *vtsdev, const struct firmware *fir
 	core_data->early_suspend.resume = goodix_ts_lateresume;
 	core_data->early_suspend.suspend = goodix_ts_earlysuspend;
 	register_early_suspend(&core_data->early_suspend);
-#endif*/
+#endif
 
 	/* esd protector */
 	goodix_ts_esd_init_V2(core_data);

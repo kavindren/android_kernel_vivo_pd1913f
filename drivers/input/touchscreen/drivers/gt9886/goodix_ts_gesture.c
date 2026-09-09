@@ -60,6 +60,17 @@ struct gesture_module {
 
 struct gesture_module *gsx_gesture_V2; /*allocated in gesture init module*/
 
+/*
+ * vts_expected_mode() only keeps the IC in gesture (low-power scan) mode on
+ * screen-off when FINGER_HIGHLIGHT is set - i.e. only while AOD is on. Without
+ * AOD it drops to VTS_ST_SLEEP and double-tap-to-wake is dead. Mirror the
+ * enable/disable of this ext-module into VTS_STA_GESTURE (see vts_expected_mode)
+ * so gestures work on every screen-off. The module is auto-registered at probe,
+ * so this is on by default; `echo 0 > /sys/.../goodix_ts.0/gesture/enable`
+ * turns it back off at runtime.
+ */
+static struct vts_device *gsx_vtsdev_V2;
+
 
 /**
  * gsx_gesture_V2_type_show - show valid gesture type
@@ -153,6 +164,8 @@ static ssize_t gsx_gesture_V2_enable_store(struct goodix_ext_module *module,
 		if (!ret) {
 			VTI("Gesture module registered!");
 			atomic_set(&gsx_gesture_V2->registered, 1);
+			if (gsx_vtsdev_V2)
+				vts_state_set(gsx_vtsdev_V2, VTS_STA_GESTURE, 1);
 		} else {
 			atomic_set(&gsx_gesture_V2->registered, 0);
 			VTE("Gesture module register failed");
@@ -166,6 +179,8 @@ static ssize_t gsx_gesture_V2_enable_store(struct goodix_ext_module *module,
 		ret = goodix_unregister_ext_module_V2(&gsx_gesture_V2->module);
 		if (!ret) {
 			atomic_set(&gsx_gesture_V2->registered, 0);
+			if (gsx_vtsdev_V2)
+				vts_state_set(gsx_vtsdev_V2, VTS_STA_GESTURE, 0);
 			VTI("Gesture module unregistered success");
 		} else {
 			atomic_set(&gsx_gesture_V2->registered, 1);
@@ -244,6 +259,15 @@ static int gsx_gesture_V2_init(struct goodix_ts_core *core_data,
 		ts_dev = core_data->ts_dev;
 	else
 		return 0;
+
+	gsx_vtsdev_V2 = ts_dev->vtsdev;
+	/*
+	 * The ext-module is registered unconditionally at probe
+	 * (goodix_gsx_gesture_V2_init), so raise VTS_STA_GESTURE here to keep
+	 * the IC in gesture scan on every screen-off (not only under AOD).
+	 */
+	if (gsx_vtsdev_V2)
+		vts_state_set(gsx_vtsdev_V2, VTS_STA_GESTURE, 1);
 
 	if (!core_data || !ts_dev->hw_ops->write || !ts_dev->hw_ops->read) {
 		VTE("Register gesture module failed, ts_core unsupported");
@@ -607,7 +631,8 @@ static int gsx_gesture_V2_before_suspend(struct goodix_ts_core *core_data,
 		}
 		usleep_range(5000, 5010);
 	}*/ 
-	if (touch_state == VTS_ST_GESTURE) {
+	if (touch_state == VTS_ST_GESTURE ||
+	    vts_state_get(core_data->vtsdev, VTS_STA_GESTURE)) {
 		ret = hw_ops->send_cmd(core_data->ts_dev, gesture_cmd);
 		if (ret != 0) {
 			VTE("Send gesture command error");

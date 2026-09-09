@@ -218,6 +218,15 @@ static enum vts_run_mode vts_expected_mode(struct vts_device *vtsdev)
 	if (vts_state_get(vtsdev, VTS_STA_FINGER_HIGHLIGHT))
 		return VTS_ST_GESTURE;
 
+	/*
+	 * Keep the IC in low-power gesture scan on screen-off whenever the
+	 * gesture ext-module is enabled (set from goodix_ts_gesture.c on
+	 * /sys/.../gesture/enable). Without this, gestures / double-tap-to-wake
+	 * only work while AOD is up (via FINGER_HIGHLIGHT above).
+	 */
+	if (vts_state_get(vtsdev, VTS_STA_GESTURE))
+		return VTS_ST_GESTURE;
+
 	if (vts_get_run_mode(vtsdev) == VTS_ST_GESTURE)
 		return VTS_ST_GESTURE;
 

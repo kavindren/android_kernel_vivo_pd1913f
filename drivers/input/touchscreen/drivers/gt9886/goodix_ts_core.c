@@ -1842,7 +1842,15 @@ int goodix_ts_suspend_V2(struct goodix_ts_core *core_data, int is_sleep)
 			if (!ext_module->funcs || !ext_module->funcs->before_suspend)
 				continue;
 
-			if (is_sleep) {
+			/*
+			 * is_sleep=1 (fb FB_BLANK_POWERDOWN on a plain, non-AOD
+			 * screen-off) normally skips the gesture module and the IC
+			 * goes to full sleep - which is why double-tap-to-wake only
+			 * worked under AOD. Let it run when VTS_STA_GESTURE is held
+			 * so gestures stay armed on every screen-off.
+			 */
+			if (is_sleep &&
+			    !vts_state_get(core_data->vtsdev, VTS_STA_GESTURE)) {
 				if (strcmp(ext_module->name, "Goodix_gsx_gesture_V2") == 0)
 					continue;
 			}
@@ -2773,6 +2781,15 @@ static int goodix_ts_probe(struct platform_device *pdev)
 	/* touch core layer is a platform driver */
 	ts_device->goodix_sensor_test = 0;
 	ts_device->vtsdev = vtsdev;
+	/*
+	 * Hold VTS_STA_GESTURE so vts_expected_mode() keeps the IC in low-power
+	 * gesture scan on every screen-off (double-tap-to-wake and any enabled
+	 * swipe/letter gestures), not only while AOD is up (FINGER_HIGHLIGHT).
+	 * The goodix gesture ext-module is auto-registered right after probe so
+	 * DCLICK etc. are armed. Runtime off:
+	 *   echo 0 > /sys/devices/platform/goodix_ts.0/gesture/enable
+	 */
+	vts_state_set(vtsdev, VTS_STA_GESTURE, 1);
 	core_data->pdev = pdev;
 	core_data->ts_dev = ts_device;
 	platform_set_drvdata(pdev, core_data);

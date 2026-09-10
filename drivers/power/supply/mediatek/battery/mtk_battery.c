@@ -1229,6 +1229,19 @@ static int proc_dump_log_show(struct seq_file *m, void *v)
 		 * OCV against the calibrated discharge curve.
 		 */
 		gauge_dev_set_rtc_ui_soc(gm.gdev, 0);
+		/*
+		 * fgauge_set_rtc_ui_soc() only ORs in whatever the valid bit
+		 * (spare3 0x80) already was, so a raw clear leaves it unset
+		 * and the register reads as "invalid" forever after - it
+		 * doesn't affect the rtc_ui_soc==0 check above (dod_init only
+		 * looks at the value, not the valid bit), but it does leave
+		 * fgauge_read_RTC_boot_status() defaulting bat_plug_out_time
+		 * to 31/unknown on every future boot. Since the percentage is
+		 * already 0 at this point, gauge_set_reset_status() ORing in
+		 * 0x80 gives a correctly-flagged "valid, zero" register
+		 * instead of "invalid, zero".
+		 */
+		gauge_dev_set_reset_status(gm.gdev, 1);
 		seq_puts(m, "RTC UI_SOC cleared; will recompute from OCV on next boot\n");
 		break;
 	default:

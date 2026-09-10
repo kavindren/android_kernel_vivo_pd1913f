@@ -1178,6 +1178,7 @@ static int proc_dump_log_show(struct seq_file *m, void *v)
 	seq_puts(m, "103: send CHR FULL\n");
 	seq_puts(m, "104: disable NAFG interrupt\n");
 	seq_puts(m, "105: show daemon pid\n");
+	seq_puts(m, "200: clear persisted RTC UI_SOC (recompute from OCV on next boot)\n");
 
 	seq_printf(m, "current command:%d\n", gm.proc_cmd_id);
 
@@ -1214,6 +1215,21 @@ static int proc_dump_log_show(struct seq_file *m, void *v)
 		break;
 	case 105:
 		seq_printf(m, "Gauge daemon pid:%d\n", gm.g_fgd_pid);
+		break;
+	case 200:
+		/*
+		 * The RTC "FGSOC" spare register survives power-off (it's
+		 * backed by VRTC, not any OS) and is what any kernel - ours
+		 * or stock - trusts as the boot-time UI SOC whenever it's
+		 * non-zero (see fgr_dod_init() in mtk_battery_recovery.c).
+		 * A bad persisted value stays wrong forever across reboots
+		 * and even survives switching kernels. Clearing it to 0
+		 * makes the next boot's fgr_dod_init() take the "no valid
+		 * rtc_ui_soc" branch and recompute purely from the boot-time
+		 * OCV against the calibrated discharge curve.
+		 */
+		gauge_dev_set_rtc_ui_soc(gm.gdev, 0);
+		seq_puts(m, "RTC UI_SOC cleared; will recompute from OCV on next boot\n");
 		break;
 	default:
 		seq_printf(m, "do not support command:%d\n", gm.proc_cmd_id);

@@ -1,3 +1,14 @@
 prebuilts
 build.log
 kernel_out/
+
+# Reference-only driver variants from other device SKUs, kept in
+# ~/1907N_private/kernel-reference-variants/, not part of the build.
+drivers/misc/mediatek/scp_old/
+drivers/misc/mediatek/sensor_old/
+drivers/misc/mediatek/sensor_y33s/
+drivers/misc/mediatek/sensors-1.0_old/
+drivers/misc/mediatek/sensors-1.0_y33s/
+drivers/nfc_old/
+drivers/nfc_svo/
+drivers/nfc_zov/

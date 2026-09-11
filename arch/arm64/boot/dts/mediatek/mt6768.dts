@@ -3797,6 +3797,18 @@ defined(CONFIG_MTK_CAM_SECURITY_SUPPORT)
 
 	charge: charge {
 		compatible = "vivo,charge";
+		status = "okay";
+
+		/* D+/D- isolation switch GPIO (release "DPDM Hi-Z" on real USB
+		 * connect - see mtk_chg_type_det.c's vivo_usboe_release_dpdm_hiz()).
+		 * Confirmed against the real running device tree of a live
+		 * stock-kernel boot (/proc/device-tree/charge/vivo,usboe-gpio) -
+		 * this property name/pin number is board-specific and varies
+		 * across the shared vivo BSP (163/178/25 seen across different
+		 * devices' cust_vivo_*.dtsi, which - unlike this file - are not
+		 * actually built for this device; see dtbimg.mk).
+		 */
+		vivo,usboe-gpio = <&pio 178 0>;
 	};
 
 	meter: meter {

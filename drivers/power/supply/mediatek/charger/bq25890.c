@@ -12,6 +12,7 @@
  */
 
 #include <linux/types.h>
+#include <linux/kernel.h>	/* For DIV_ROUND_CLOSEST */
 #include <linux/init.h>		/* For init/exit macros */
 #include <linux/module.h>	/* For MODULE_ marcros  */
 #include <linux/platform_device.h>
@@ -2191,6 +2192,23 @@ static int bq25890_driver_probe(struct i2c_client *client, const struct i2c_devi
 	 */
 	bq25890_set_VBAT_IR_compensation(2);
 	bq25890_set_VBAT_clamp(3);
+
+	/*
+	 * REG05 IPRECHG/ITERM. Same story as the IR-compensation above:
+	 * nothing in this tree ever called bq25890_set_iterml()/
+	 * bq25890_set_iprechg() (the vivo interact.c/charge.c layer that did
+	 * is stripped from the public GPL source - see 1907N_private/kernel-
+	 * reference-variants/vivo_power_supply_reconstructed/), so both sit
+	 * at the chip's power-on-reset default (128mA on this family) instead
+	 * of vivo's real cust_vivo_PD1913F_EX.dtsi values
+	 * (vivo,iterm-current-ma = 256, vivo,iprechg-current-ma = 300).
+	 * REG05 is a plain 4-bit-per-field, 64mA-per-step encoding starting
+	 * at 64mA (mA = 64 + code*64, 0..15 -> 64..1024mA) - not the
+	 * charging_parameter_to_value()-style nonuniform table CS_VTH/
+	 * VBAT_CV_VTH use, so round to the nearest code directly.
+	 */
+	bq25890_set_iterml(DIV_ROUND_CLOSEST(256 - 64, 64));
+	bq25890_set_iprechg(DIV_ROUND_CLOSEST(300 - 64, 64));
 
 	info->psy = power_supply_get_by_name("charger");
 	if (!info->psy) {

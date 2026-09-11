@@ -40,6 +40,8 @@
 #include <linux/reboot.h>
 
 #include <linux/of.h>
+#include <linux/of_gpio.h>
+#include <linux/gpio/consumer.h>
 #include <linux/extcon.h>
 
 #include <mt-plat/upmu_common.h>
@@ -203,6 +205,47 @@ static int mt_charger_get_property(struct power_supply *psy,
 	return 0;
 }
 
+/*
+ * vivo's real stock wrapper around this same charge-type-determined connect
+ * dispatch (drivers/power/supply/vivo/interact.c, platform_usb_connect() -
+ * not present in the public GPL kernel source vivo ships for this or any
+ * other MTK device that references it, reconstructed by decompiling the
+ * real stock kernel binary) does one more thing before calling mt_usb_connect():
+ * release "DPDM Hi-Z" - drive the board's D+/D- isolation switch GPIO low -
+ * via drivers/power/supply/vivo/charge.c's own ioctrl_property case 0xb9,
+ * which is also missing from our tree. Without it, D+/D- stay in the
+ * high-impedance state BC1.2 detection left them in: MUSB's own internal
+ * state (session/VBUS/pullup, verified byte-identical to stock's compiled
+ * driver) ends up fully correct, yet the actual data lines never reach the
+ * connector, so the host sees nothing. The GPIO number/DT node/property are
+ * all confirmed against the real running device tree of a live stock-kernel
+ * boot (/proc/device-tree/charge/vivo,usboe-gpio), not guessed.
+ */
+static void vivo_usboe_release_dpdm_hiz(void)
+{
+	static struct gpio_desc *usboe_gpiod;
+	static bool usboe_checked;
+
+	if (!usboe_checked) {
+		struct device_node *np = of_find_compatible_node(NULL, NULL, "vivo,charge");
+
+		usboe_checked = true;
+		if (np) {
+			int gpio = of_get_named_gpio(np, "vivo,usboe-gpio", 0);
+
+			if (gpio_is_valid(gpio) &&
+			    !gpio_request(gpio, "vivo_usboe")) {
+				usboe_gpiod = gpio_to_desc(gpio);
+				pr_info("%s: got usboe gpio %d\n", __func__, gpio);
+			}
+			of_node_put(np);
+		}
+	}
+
+	if (usboe_gpiod)
+		gpiod_direction_output_raw(usboe_gpiod, 0);
+}
+
 #ifdef CONFIG_EXTCON_USB_CHG
 static void usb_extcon_detect_cable(struct work_struct *work)
 {
@@ -264,6 +307,7 @@ static int mt_charger_set_property(struct power_supply *psy,
 		if ((mtk_chg->chg_type == STANDARD_HOST) ||
 			(mtk_chg->chg_type == CHARGING_HOST) ||
 			(mtk_chg->chg_type == NONSTANDARD_CHARGER)) {
+			vivo_usboe_release_dpdm_hiz();
 			mt_usb_connect();
 			#ifdef CONFIG_EXTCON_USB_CHG
 			info->vbus_state = 1;

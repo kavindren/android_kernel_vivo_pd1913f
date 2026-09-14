@@ -477,7 +477,20 @@ static int mt65xx_leds_probe(struct platform_device *pdev)
 		INIT_WORK(&g_leds_data[i]->work, mt_mt65xx_led_work);
 
 		if (strcmp(cust_led_list[i].name, "lcd-backlight") == 0) {
-			g_leds_data[i]->cdev.max_brightness = 2047;
+			/* 1907N: mt6768/mtk_leds.c's mt_mt65xx_led_set() expects its "level"
+			 * input in the legacy 0-255 Android brightness scale (it divides by
+			 * 255 via CONFIG_LIGHTNESS_MAPPING_VALUE=255, then itself scales UP
+			 * into the real 0-2047 (MT_LED_INTERNAL_LEVEL_BIT_CNT=11) internal
+			 * AAL/display-pipeline resolution via
+			 * "((2047 * level) + 127) / 255"). Declaring max_brightness=2047
+			 * here leaked that internal resolution into the userspace-facing
+			 * LED class device: any HAL that (correctly, per the sysfs ABI)
+			 * scales its writes to max_brightness ends up writing 0-2047
+			 * again into a function that treats it as already being 0-255,
+			 * double-scaling and badly distorting/saturating brightness
+			 * (mid-slider brightness ending up much dimmer than intended).
+			 */
+			g_leds_data[i]->cdev.max_brightness = 255;
 		}
 
 		ret = led_classdev_register(&pdev->dev, &g_leds_data[i]->cdev);

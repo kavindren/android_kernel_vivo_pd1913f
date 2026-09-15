@@ -1,66 +1,36 @@
 /*
- * mt6768_battery_table.dtsi -- REPLACEMENT for the generic placeholder file
- * currently included by your battery node:
+ * mt6768_battery_table.dtsi -- replacement for the generic placeholder table
+ * included by the battery node (`compatible = "vivo,battery", "mediatek,bat_gm30"`,
+ * `#include "mediatek/bat_setting/mt6768_battery_table.dtsi"`). That original file
+ * parses fine but its OCV/voltage/resistance numbers belong to whatever mt6768
+ * reference device it was copied from, not this PD1913 battery. Drops in at the
+ * same path/include, overwriting the generic one.
  *
- *   battery: battery {
- *       compatible = "vivo,battery", "mediatek,bat_gm30";
- *       ...
- *       #include "mediatek/bat_setting/mt6768_battery_table.dtsi"
- *   };
+ * Data source: vivo_battery0_profile_t0..t4 from vivo's own PD1913_battery_table.dtsi
+ * (battery id 0, "B-H0 SX 4500"). MULTI_BATTERY is unset in this DTS, so only
+ * battery-id 0's table matters regardless.
  *
- * Your original file at that path is a GENERIC reference table (whatever
- * mt6768 device it was copied from) -- it parses fine (which is why your
- * log shows "fg_custom_parse_table: battery0_profile_t0, 100, column:3"
- * succeeding), but the actual OCV/voltage/resistance numbers do NOT belong
- * to your real PD1913 battery. Drop this file in at the exact same path,
- * overwriting the generic one, and the #include line in mt6768.dts does
- * not need to change at all.
- *
- * Data source: vivo_battery0_profile_t0..t4 from your own
- * PD1913_battery_table.dtsi (battery id 0, "B-H0 SX 4500").
- * MULTI_BATTERY is unset in your DTS (reads as garbage, see chat) so only
- * battery-id 0's table matters right now regardless -- this covers that.
- *
- * Conversion (verified against the actual parsing code in
- * mtk_battery_core.c: fg_custom_parse_table() copies mah/voltage/resistance
- * straight from the DT ints with NO internal rescaling -- so the DT values
- * themselves must already be pre-scaled the way the ORIGINAL generic
- * mt6768_battery_table.dtsi you were given does it. That file's own data
- * was used as the scaling reference: Z axis 0..29760 over 100 rows
- * regardless of actual mAh (confirmed: same 0..29760 range appears in that
- * file despite it almost certainly not being a 4500 mAh cell -- this is a
- * fixed axis, not capacity-scaled), voltage = mV*10, resistance = mOhm*10):
+ * Conversion: fg_custom_parse_table() (mtk_battery_core.c) copies mah/voltage/
+ * resistance straight from the DT ints with no internal rescaling, so values must
+ * already be pre-scaled the way the original generic table did it - Z axis 0..29760
+ * over 100 rows regardless of actual mAh (a fixed axis, not capacity-scaled),
+ * voltage = mV*10, resistance = mOhm*10:
  *
  *   Z (row i, i=0..99)   = round(i * 29760 / 99)
  *   voltage               = vivo_mV * 10
  *   resistance            = vivo_mOhm * 10
  *
- * vivo's 101 points (idx 0..100) were trimmed to 100 (idx 0..99, dropping
- * the very last fully-depleted point) to match battery0_profile_tX_num=100,
- * which is what fg_table_cust_data.fg_profile[0].size expects (see
- * fg_custom_parse_table -> saddles = fg_table_cust_data.fg_profile[0].size).
- * If that size is NOT 100 in your actual build (check
- * fg_table_cust_data.fg_profile[] initialization / wherever .size gets set
- * before this DTS is parsed), the row count here needs to match it exactly
- * or the lookup will run off the end of the array.
+ * vivo's 101 points (idx 0..100) were trimmed to 100 (idx 0..99, dropping the last
+ * fully-depleted point) to match battery0_profile_tX_num=100
+ * (fg_table_cust_data.fg_profile[0].size).
  *
- * Temperature bin mapping (vivo has 5 bins, GM30 here wants 6 --
- * TEMPERATURE_T0..T5 = 50,25,10,0,-6,-10 per your mt6768.dts):
- *   T0 (50C)  <- vivo t4 (50C)   exact match
- *   T1 (25C)  <- vivo t3 (25C)   exact match
- *   T2 (10C)  <- vivo t2 (10C)   exact match
- *   T3 (0C)   <- vivo t1 (0C)    exact match
- *   T4 (-6C)  <- vivo t0 (-10C)  no exact bin, reused (closest available)
- *   T5 (-10C) <- vivo t0 (-10C)  exact match
- * T4 is the only approximation, and only affects behavior in the
- * -10C..0C range -- does not touch normal indoor operation.
+ * Temperature bin mapping (vivo has 5 bins, GM30 wants 6 - T0..T5 = 50,25,10,0,-6,-10):
+ *   T0 (50C) <- t4, T1 (25C) <- t3, T2 (10C) <- t2, T3 (0C) <- t1 - exact matches;
+ *   T4 (-6C) and T5 (-10C) both reuse vivo's t0 (-10C), the only approximation,
+ *   affecting only the -10C..0C range.
  *
- * A companion script (convert_vivo_battery_table.py) is provided alongside
- * this file so you can regenerate it yourself -- e.g. to switch to
- * battery-id 1/2/3 ("B-H0 ATL 4500" / "B-H0 LW 4500") if you find via
- * g_fg_battery_id which one your unit actually reports, or to fix the
- * mapping/scaling if either assumption above turns out wrong on real
- * hardware.
+ * convert_vivo_battery_table.py alongside this file regenerates it, e.g. for a
+ * different battery-id variant ("B-H0 ATL 4500" / "B-H0 LW 4500").
  */
 
 /* battery0_profile_t0: 50C  (Qmax 4810 mAh) */

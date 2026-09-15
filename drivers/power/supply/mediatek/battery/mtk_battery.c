@@ -137,9 +137,8 @@ static enum power_supply_property battery_props[] = {
 /*
  * Advertised charging capability for the detected charger type. The health HAL
  * reads CURRENT_MAX/VOLTAGE_MAX from the "battery" supply to feed SystemUI's
- * charging-speed label; nothing here populated them before ("Max charging
- * current: 0" in dumpsys), so a DCP/PE session never showed as fast charging.
- * These are the port's advertised capability, not a live measurement.
+ * charging-speed label - the port's advertised capability, not a live
+ * measurement, and previously unpopulated.
  */
 static void batt_charge_capability(int *cur_ua, int *volt_uv)
 {

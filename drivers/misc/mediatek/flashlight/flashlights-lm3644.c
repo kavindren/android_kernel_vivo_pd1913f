@@ -457,12 +457,10 @@ static int lm3644_write_reg(struct i2c_client *client, u8 reg, u8 val)
 
 	if (ret < 0){
 		pr_err("failed writing at 0x%02x\n", reg);
-		/* Deliberately NOT re-latching chip->state_pin_short here.
-		 * We've confirmed (via probe's non-fatal ID check + native
-		 * comparison) that this board's chip fails I2C transactions
-		 * for reasons unrelated to a genuine pin-shorted-to-GND
-		 * fault -- re-latching here would silently block every
-		 * subsequent write attempt after the very first failure. */
+		/* Deliberately not re-latching chip->state_pin_short here - this
+		 * board's chip fails I2C transactions for reasons unrelated to a
+		 * genuine pin-shorted-to-GND fault, and re-latching would block
+		 * every subsequent write after the first failure. */
 	}
 	return ret;
 }
@@ -1663,13 +1661,10 @@ static int lm3644_i2c_probe(
 
 	pr_debug("i2c probe start.\n");
 
-	/* Confirmed via live testing: every single register on this board's
-	 * chip only ACKs at 0x6b -- the 0x63 from this board's DTS reg
-	 * property never works, for any register, ever. Rather than retry
-	 * at 0x6b after every failed 0x63 attempt (which costs a full I2C
-	 * timeout each time), just fix the client's address once, here,
-	 * before anything else touches the bus. */
-	pr_info("lm3644: overriding i2c addr 0x%02x -> 0x6b (confirmed via testing)\n",
+	/* This board's chip only ACKs at 0x6b - the 0x63 from the DTS reg
+	 * property never works. Fix the client's address once here rather
+	 * than retrying at 0x6b after every failed 0x63 attempt. */
+	pr_info("lm3644: overriding i2c addr 0x%02x -> 0x6b\n",
 		client->addr);
 	client->addr = 0x6b;
 
@@ -1730,19 +1725,15 @@ static int lm3644_i2c_probe(
 	chip->device_id = lm3644_get_device_id(client);
 	pr_info("lm3644_i2c_probe lm3644 DEVICE_ID = 0x%x\n", chip->device_id);
 	if(chip->device_id  < 0) {
-		/* Native flashlights-1913f logs this exact same failure on this
-		 * board and registers the device anyway -- the first ID read
-		 * apparently doesn't succeed on this hardware, but that isn't
-		 * fatal to actual torch/strobe operation. Don't abort probe. */
+		/* Native flashlights-1913f logs this same failure on this board
+		 * and registers the device anyway - not fatal to torch/strobe
+		 * operation. Don't abort probe. */
 		pr_info("[marklee]i2c failed detect%d (non-fatal, continuing)\n",
 			chip->device_id);
-		/* lm3644_read_reg() latches state_pin_short=1 on any failed
-		 * read (meant to catch a genuine pin-shorted-to-GND fault) --
-		 * the failed ID read above trips this same latch, and once
-		 * state_pin_short_ignore drops to 0 below, EVERY future
-		 * lm3644_write_reg() call (including turning the LED on)
-		 * silently no-ops because of it. Since this specific failure
-		 * is expected/harmless on this board, clear the latch here. */
+		/* The failed ID read above latches state_pin_short=1 (meant to
+		 * catch a genuine pin-shorted-to-GND fault); left set, it would
+		 * silently no-op every future lm3644_write_reg() call. Clear it,
+		 * since this failure is expected/harmless on this board. */
 		chip->state_pin_short = 0;
 	}
 	else

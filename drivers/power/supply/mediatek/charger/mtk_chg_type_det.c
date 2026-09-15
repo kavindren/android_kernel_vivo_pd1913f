@@ -207,19 +207,13 @@ static int mt_charger_get_property(struct power_supply *psy,
 
 /*
  * vivo's real stock wrapper around this same charge-type-determined connect
- * dispatch (drivers/power/supply/vivo/interact.c, platform_usb_connect() -
- * not present in the public GPL kernel source vivo ships for this or any
- * other MTK device that references it, reconstructed by decompiling the
- * real stock kernel binary) does one more thing before calling mt_usb_connect():
- * release "DPDM Hi-Z" - drive the board's D+/D- isolation switch GPIO low -
- * via drivers/power/supply/vivo/charge.c's own ioctrl_property case 0xb9,
- * which is also missing from our tree. Without it, D+/D- stay in the
- * high-impedance state BC1.2 detection left them in: MUSB's own internal
- * state (session/VBUS/pullup, verified byte-identical to stock's compiled
- * driver) ends up fully correct, yet the actual data lines never reach the
- * connector, so the host sees nothing. The GPIO number/DT node/property are
- * all confirmed against the real running device tree of a live stock-kernel
- * boot (/proc/device-tree/charge/vivo,usboe-gpio), not guessed.
+ * dispatch (drivers/power/supply/vivo/interact.c's platform_usb_connect(),
+ * not present in the public GPL source) does one more thing before calling
+ * mt_usb_connect(): release "DPDM Hi-Z" - drive the board's D+/D- isolation
+ * switch GPIO low. Without it, D+/D- stay in the high-impedance state BC1.2
+ * detection left them in - MUSB's own internal state ends up fully correct,
+ * yet the actual data lines never reach the connector, so the host sees
+ * nothing.
  */
 static void vivo_usboe_release_dpdm_hiz(void)
 {

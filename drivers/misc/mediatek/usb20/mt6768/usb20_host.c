@@ -1122,36 +1122,29 @@ static int iddig_int_init(void)
 /*
  * VBUS reality watchdog.
  *
- * On this board, mt_usb_disconnect() is only ever reached indirectly, via
- * mtk_chg_type_det.c reacting to a POWER_SUPPLY_PROP_CHARGE_TYPE change from
- * the BQ25601 charger-detection stack. That notification has been observed
- * to never fire on a real physical cable removal here, which leaves the
- * gadget stuck believing a host is still attached (usb_state<CONFIGURED>
- * forever) and SPM_RESOURCE_USER_SSUSB permanently blocking IdleBus26m /
- * IdleSyspll / IdleDram - i.e. the SoC can never reach deep idle again for
- * the rest of the boot, even with the screen off and nothing plugged in.
+ * mt_usb_disconnect() is only ever reached indirectly via mtk_chg_type_det.c
+ * reacting to a charger-type change, which doesn't reliably fire on a real
+ * physical cable removal on this board - leaving the gadget stuck believing
+ * a host is attached and SPM_RESOURCE_USER_SSUSB blocking deep idle.
+ * battery_get_vbus() reads the charger input voltage directly, independent
+ * of that notification chain, so it's used as ground truth instead.
  *
- * battery_get_vbus() reads the charger input voltage straight off the
- * gauge/ADC, independent of that notification chain, so it stays a reliable
- * ground truth even when the chg_type state machine gets stuck. Poll it
- * periodically and force a real disconnect whenever it disagrees with the
- * driver's believed state.
+ * Three things need forcing when vbus disagrees with believed state:
+ *  - mt_usb_disconnect() clears the gadget's own cdev->config state, but not
+ *    the musb->power-gated PHY clock refcount that owns the dpidle vote -
+ *    forced separately via usb_hal_dpidle_request().
+ *  - mtk_musb->usb_lock (a wakeup_source acquired on connect, released on
+ *    disconnect) can get stuck active if the driver's power flag never
+ *    flips back - released directly via __pm_relax().
+ *  - mt_usb_disconnect() never reaches android_disconnect() in the
+ *    composite/configfs layer, so gi->connected/cdev->config can stay stuck
+ *    CONFIGURED after a real unplug (a brief connect/disconnect bounce from
+ *    contact chatter can land there). usb_gadget_force_disconnect_if_stale()
+ *    drives that path directly whenever it's still out of sync.
  *
- * mt_usb_disconnect() alone only clears the gadget's own cdev->config state
- * (confirmed via dmesg: it does fire and does report vbus_exist=0 correctly)
- * - it does NOT touch the musb->power-gated PHY clock refcount in
- * usb_enable_clock() (usb20_phy.c), which is what actually calls
- * usb_hal_dpidle_request() and owns the SPM_RESOURCE_USER_SSUSB vote. That
- * refcount is driven by musb_platform_enable/disable(), a separate path that
- * doesn't get exercised just by notifying the gadget layer. Forcing the
- * dpidle vote directly fixed that part (confirmed: dpidle_status goes back
- * to 0). But mtk_musb->usb_lock - a *separate* wakeup_source ("USB suspend
- * lock", acquired in do_connection_work()'s connect branch, meant to be
- * released in its disconnect branch via __pm_relax()) is still observed
- * stuck active, still blocking system_suspend on its own. Whatever left
- * mtk_musb->power stuck true also means that disconnect branch's
- * "mtk_musb->power && !usb_on" condition never matches, so the relax call
- * never runs either. Release it directly too, same reasoning as dpidle.
+ * do_vbus_watchdog_work() re-checks all of this every tick rather than
+ * latching after one attempt, so it keeps retrying while something is
+ * genuinely still wrong and goes quiet the moment it settles.
  */
 #define VBUS_WATCHDOG_INTERVAL_MS	1000
 #define VBUS_WATCHDOG_NO_VBUS_MV	2500
@@ -1163,18 +1156,6 @@ static struct delayed_work vbus_watchdog_work;
 
 static void do_vbus_watchdog_work(struct work_struct *data)
 {
-	/*
-	 * usb_gadget_force_disconnect_if_stale() is the real check: it
-	 * looks at the composite gadget's own gi->connected/cdev->config
-	 * and only acts (driving android_disconnect()) if they're still
-	 * out of sync with reality. mt_usb_disconnect() alone (MUSB PHY
-	 * layer) never reaches that path, which is why gadget state could
-	 * stay stuck CONFIGURED after a real unplug (seen live: a brief
-	 * connect/disconnect bounce from contact chatter). Gating on its
-	 * return value means we keep retrying every tick while something
-	 * is actually wrong, and go quiet the moment it's fixed - no
-	 * unconditional forever-loop either way.
-	 */
 	if (battery_get_vbus() < VBUS_WATCHDOG_NO_VBUS_MV &&
 			usb_gadget_force_disconnect_if_stale()) {
 		mt_usb_disconnect();

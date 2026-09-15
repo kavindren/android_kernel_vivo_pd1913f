@@ -1157,22 +1157,27 @@ static int iddig_int_init(void)
 #define VBUS_WATCHDOG_NO_VBUS_MV	2500
 
 extern void mt_usb_disconnect(void);
+extern bool usb_gadget_is_connected(void);
 
 static struct delayed_work vbus_watchdog_work;
-static bool vbus_watchdog_forced_disconnect;
 
 static void do_vbus_watchdog_work(struct work_struct *data)
 {
-	if (battery_get_vbus() < VBUS_WATCHDOG_NO_VBUS_MV) {
-		if (!vbus_watchdog_forced_disconnect) {
-			mt_usb_disconnect();
-			usb_hal_dpidle_request(USB_DPIDLE_ALLOWED);
-			if (mtk_musb && mtk_musb->usb_lock.active)
-				__pm_relax(&mtk_musb->usb_lock);
-			vbus_watchdog_forced_disconnect = true;
-		}
-	} else {
-		vbus_watchdog_forced_disconnect = false;
+	/*
+	 * Only force a disconnect while the gadget itself still believes
+	 * it's connected/configured - this also covers the case where a
+	 * real physical unplug caused a brief connect/disconnect bounce
+	 * (contact chatter) that left the gadget settled on CONFIGURED
+	 * despite VBUS being long gone. Re-checking real gadget state each
+	 * tick (instead of a fire-once latch) means we keep retrying until
+	 * that's actually fixed, not just once.
+	 */
+	if (battery_get_vbus() < VBUS_WATCHDOG_NO_VBUS_MV &&
+			usb_gadget_is_connected()) {
+		mt_usb_disconnect();
+		usb_hal_dpidle_request(USB_DPIDLE_ALLOWED);
+		if (mtk_musb && mtk_musb->usb_lock.active)
+			__pm_relax(&mtk_musb->usb_lock);
 	}
 
 	schedule_delayed_work(&vbus_watchdog_work,

@@ -1824,6 +1824,25 @@ void usb_state_monitor_work(void)
 			msecs_to_jiffies(USB_STATE_MONITOR_DELAY));
 }
 
+bool usb_gadget_is_connected(void)
+{
+	struct gadget_info *gi = dev_get_drvdata(android_device);
+	struct usb_composite_dev *cdev;
+	unsigned long flags;
+	bool connected;
+
+	if (!gi)
+		return false;
+
+	cdev = &gi->cdev;
+	spin_lock_irqsave(&cdev->lock, flags);
+	connected = cdev->config || gi->connected;
+	spin_unlock_irqrestore(&cdev->lock, flags);
+
+	return connected;
+}
+EXPORT_SYMBOL(usb_gadget_is_connected);
+
 #define DESCRIPTOR_STRING_ATTR(field, buffer)				\
 static ssize_t								\
 field ## _show(struct device *dev, struct device_attribute *attr,	\

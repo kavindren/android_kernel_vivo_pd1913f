@@ -1153,7 +1153,7 @@ static int iddig_int_init(void)
  * "mtk_musb->power && !usb_on" condition never matches, so the relax call
  * never runs either. Release it directly too, same reasoning as dpidle.
  */
-#define VBUS_WATCHDOG_INTERVAL_MS	5000
+#define VBUS_WATCHDOG_INTERVAL_MS	1000
 #define VBUS_WATCHDOG_NO_VBUS_MV	2500
 
 extern void mt_usb_disconnect(void);

@@ -1824,24 +1824,37 @@ void usb_state_monitor_work(void)
 			msecs_to_jiffies(USB_STATE_MONITOR_DELAY));
 }
 
-bool usb_gadget_is_connected(void)
+/*
+ * Checks whether the composite gadget still believes it's connected or
+ * configured and, if so, drives the same android_disconnect() path a real
+ * UDC-detected bus disconnect would - clearing gi->connected/cdev->config
+ * and sending the DISCONNECTED uevent. mt_usb_disconnect() (MUSB PHY layer)
+ * doesn't reach this on its own, which is why callers polling only the PHY
+ * side never see the composite state actually settle.
+ */
+bool usb_gadget_force_disconnect_if_stale(void)
 {
 	struct gadget_info *gi = dev_get_drvdata(android_device);
 	struct usb_composite_dev *cdev;
+	struct usb_gadget *gadget;
 	unsigned long flags;
-	bool connected;
+	bool was_connected;
 
 	if (!gi)
 		return false;
 
 	cdev = &gi->cdev;
 	spin_lock_irqsave(&cdev->lock, flags);
-	connected = cdev->config || gi->connected;
+	was_connected = cdev->config || gi->connected;
+	gadget = cdev->gadget;
 	spin_unlock_irqrestore(&cdev->lock, flags);
 
-	return connected;
+	if (was_connected && gadget)
+		android_disconnect(gadget);
+
+	return was_connected;
 }
-EXPORT_SYMBOL(usb_gadget_is_connected);
+EXPORT_SYMBOL(usb_gadget_force_disconnect_if_stale);
 
 #define DESCRIPTOR_STRING_ATTR(field, buffer)				\
 static ssize_t								\

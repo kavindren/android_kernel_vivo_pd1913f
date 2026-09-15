@@ -1157,23 +1157,26 @@ static int iddig_int_init(void)
 #define VBUS_WATCHDOG_NO_VBUS_MV	2500
 
 extern void mt_usb_disconnect(void);
-extern bool usb_gadget_is_connected(void);
+extern bool usb_gadget_force_disconnect_if_stale(void);
 
 static struct delayed_work vbus_watchdog_work;
 
 static void do_vbus_watchdog_work(struct work_struct *data)
 {
 	/*
-	 * Only force a disconnect while the gadget itself still believes
-	 * it's connected/configured - this also covers the case where a
-	 * real physical unplug caused a brief connect/disconnect bounce
-	 * (contact chatter) that left the gadget settled on CONFIGURED
-	 * despite VBUS being long gone. Re-checking real gadget state each
-	 * tick (instead of a fire-once latch) means we keep retrying until
-	 * that's actually fixed, not just once.
+	 * usb_gadget_force_disconnect_if_stale() is the real check: it
+	 * looks at the composite gadget's own gi->connected/cdev->config
+	 * and only acts (driving android_disconnect()) if they're still
+	 * out of sync with reality. mt_usb_disconnect() alone (MUSB PHY
+	 * layer) never reaches that path, which is why gadget state could
+	 * stay stuck CONFIGURED after a real unplug (seen live: a brief
+	 * connect/disconnect bounce from contact chatter). Gating on its
+	 * return value means we keep retrying every tick while something
+	 * is actually wrong, and go quiet the moment it's fixed - no
+	 * unconditional forever-loop either way.
 	 */
 	if (battery_get_vbus() < VBUS_WATCHDOG_NO_VBUS_MV &&
-			usb_gadget_is_connected()) {
+			usb_gadget_force_disconnect_if_stale()) {
 		mt_usb_disconnect();
 		usb_hal_dpidle_request(USB_DPIDLE_ALLOWED);
 		if (mtk_musb && mtk_musb->usb_lock.active)

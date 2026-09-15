@@ -1159,14 +1159,20 @@ static int iddig_int_init(void)
 extern void mt_usb_disconnect(void);
 
 static struct delayed_work vbus_watchdog_work;
+static bool vbus_watchdog_forced_disconnect;
 
 static void do_vbus_watchdog_work(struct work_struct *data)
 {
 	if (battery_get_vbus() < VBUS_WATCHDOG_NO_VBUS_MV) {
-		mt_usb_disconnect();
-		usb_hal_dpidle_request(USB_DPIDLE_ALLOWED);
-		if (mtk_musb && mtk_musb->usb_lock.active)
-			__pm_relax(&mtk_musb->usb_lock);
+		if (!vbus_watchdog_forced_disconnect) {
+			mt_usb_disconnect();
+			usb_hal_dpidle_request(USB_DPIDLE_ALLOWED);
+			if (mtk_musb && mtk_musb->usb_lock.active)
+				__pm_relax(&mtk_musb->usb_lock);
+			vbus_watchdog_forced_disconnect = true;
+		}
+	} else {
+		vbus_watchdog_forced_disconnect = false;
 	}
 
 	schedule_delayed_work(&vbus_watchdog_work,

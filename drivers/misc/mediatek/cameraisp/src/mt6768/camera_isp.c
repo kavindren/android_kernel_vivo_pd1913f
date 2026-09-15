@@ -983,7 +983,7 @@ enum eLOG_TYPE {
 };
 
 #define NORMAL_STR_LEN (512)
-#define ERR_PAGE 2
+#define ERR_PAGE 16
 #define DBG_PAGE 2
 #define INF_PAGE 4
 /* #define SV_LOG_STR_LEN NORMAL_STR_LEN */

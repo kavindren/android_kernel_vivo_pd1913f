@@ -1079,6 +1079,21 @@ static struct SV_LOG_STR gSvLog[ISP_IRQ_TYPE_AMOUNT];
 					} \
 				} \
 			} \
+			else if (logT == _LOG_ERR) {\
+				for (i = 0; i < ERR_PAGE; i++) {\
+					if (ptr[NORMAL_STR_LEN*(i+1) - 1] != \
+					'\0') {\
+						ptr[NORMAL_STR_LEN*(i+1) - 1] =\
+							'\0';\
+						pr_info("%s", \
+						  &ptr[NORMAL_STR_LEN*i]);\
+					} else{\
+						pr_info("%s", \
+						  &ptr[NORMAL_STR_LEN*i]);\
+						break;\
+					} \
+				} \
+			} \
 			else {\
 				pr_info("N.S.%d", logT);\
 			} \

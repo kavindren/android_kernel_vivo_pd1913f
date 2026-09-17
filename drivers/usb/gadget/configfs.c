@@ -1834,12 +1834,28 @@ void usb_state_monitor_work(void)
  */
 bool usb_gadget_force_disconnect_if_stale(void)
 {
-	struct gadget_info *gi = dev_get_drvdata(android_device);
+	struct gadget_info *gi;
 	struct usb_composite_dev *cdev;
 	struct usb_gadget *gadget;
 	unsigned long flags;
 	bool was_connected;
 
+	/*
+	 * android_device is a static struct device * that starts out NULL and
+	 * is only assigned once the android composite gadget's configfs group
+	 * actually gets instantiated (device_create() further down this file).
+	 * do_vbus_watchdog_work can run this very early at boot - if a cable
+	 * is already plugged in at power-on, the charger/PMIC-driven VBUS
+	 * watchdog can fire before configfs has set android_device up at all,
+	 * and dev_get_drvdata(NULL) then dereferences a NULL struct device,
+	 * crashing (NULL pointer translation fault at kernel boot ~t=1.8s,
+	 * Comm: kworker, Workqueue: events do_vbus_watchdog_work). Confirmed
+	 * via a real device last_kmsg. See device git history.
+	 */
+	if (!android_device)
+		return false;
+
+	gi = dev_get_drvdata(android_device);
 	if (!gi)
 		return false;
 

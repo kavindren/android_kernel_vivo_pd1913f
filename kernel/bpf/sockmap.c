@@ -42,7 +42,8 @@
 #include <net/tcp.h>
 
 #define SOCK_CREATE_FLAG_MASK \
-	(BPF_F_NUMA_NODE | BPF_F_RDONLY | BPF_F_WRONLY)
+	(BPF_F_NUMA_NODE | BPF_F_RDONLY | BPF_F_WRONLY | \
+	 BPF_F_RDONLY_PROG | BPF_F_WRONLY_PROG)
 
 struct bpf_stab {
 	struct bpf_map map;

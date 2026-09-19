@@ -165,6 +165,10 @@ void wakeup_fg_algo_recovery(unsigned int intr_num)
 		fgr_vbat2_l_int_handler();
 		fg_int_end_flow(FG_INTR_VBAT2_L);
 		break;
+	case FG_INTR_CHR_FULL:
+		fgr_chr_full_handler();
+		fg_int_end_flow(FG_INTR_CHR_FULL);
+		break;
 	}
 
 	bm_err("[%s] intr_num=0x%x\n",
@@ -475,6 +479,46 @@ void fgr_shutdown_int_handler(void)
 	low_tracking_enable = 1;
 	set_fg_time(pdata->discharge_tracking_time);
 	imix_error_calibration();
+}
+
+/*
+ * The charger manager raised CHARGER_NOTIFY_EOC (-> notify_fg_chr_full()): the
+ * charger IC finished the charge, so the pack is full by definition. The full
+ * gauge daemon reacts to this; this in-kernel gauge used to drop the event, so
+ * ui_soc only advanced 1% per 1% of coulombs from whatever (possibly stale)
+ * persisted value it booted with - a battery that was really full could sit at
+ * 73% while the charge current had already tapered to 1-4 mA.
+ *
+ * Snap ui_soc to 100% and re-anchor the coulomb counter at 100%, the same way
+ * fgr_dod_init() anchors it at boot.
+ */
+void fgr_chr_full_handler(void)
+{
+	int vbat = get_vbat();
+	int full_vbat = SOC_to_OCV_c(9000);
+
+	/* Sanity: EOC with a clearly not-full cell (thermal stop, glitch) must not
+	 * force 100%.
+	 */
+	if (vbat < full_vbat) {
+		bm_err("[%s]ignore EOC, vbat %d < %d (90%% ocv)\n",
+			__func__, vbat, full_vbat);
+		return;
+	}
+
+	bm_err("[%s]EOC: ui_soc %d -> 10000, c_soc %d -> 10000, vbat %d\n",
+		__func__, ui_soc, fg_c_soc, vbat);
+
+	fg_c_d0_ocv = SOC_to_OCV_c(10000);
+	Set_fg_c_d0_by_ocv(fg_c_d0_ocv);
+	fg_adc_reset();
+	fg_update_c_dod();
+	soc = fg_c_soc;
+	ui_soc = 10000;
+
+	prev_car_bat0 = get_fg_hw_car();
+	fg_update_fg_bat_int2_ht();
+	fg_update_fg_bat_int2_lt();
 }
 
 void dlpt_sd_handler(void)

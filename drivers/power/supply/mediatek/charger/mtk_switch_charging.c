@@ -155,7 +155,15 @@ static void swchg_hvdcp_parallel(struct charger_manager *info, bool charging)
 	}
 
 	if (want) {
-		mtk_get_dynamic_cv(info, &cv);
+		/* same CV chg1 gets in swchg_select_cv(): a zero here programs
+		 * the chip's lowest VREG (3.856V) and it stops charging
+		 */
+		if (info->enable_sw_jeita && info->sw_jeita.cv != 0) {
+			cv = info->sw_jeita.cv;
+		} else {
+			cv = info->data.battery_cv;
+			mtk_get_dynamic_cv(info, &cv);
+		}
 		charger_dev_set_constant_voltage(par, cv);
 		charger_dev_set_input_current(par, HVDCP_CHG2_INPUT_UA);
 		charger_dev_set_charging_current(par,

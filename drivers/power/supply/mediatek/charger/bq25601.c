@@ -115,6 +115,8 @@ static DEFINE_MUTEX(g_input_current_mutex);
 static struct i2c_client *new_client;
 static const struct i2c_device_id bq25601_i2c_id[] = { {"bq25601", 0}, {"bq25601d", 0}, {} };
 
+static int bq25601_en_gpio = -1;
+
 static int bq25601_driver_probe(struct i2c_client *client,
 				const struct i2c_device_id *id);
 
@@ -1159,6 +1161,7 @@ static unsigned int charging_hw_init(void)
 
 	bq25601_set_en_hiz(0x0);
 	bq25601_set_vindpm(0x6);	/* VIN DPM check 4.6V */
+	bq25601_set_ovp(0x3);	/* VBUS OVP 14V (default 6.5V would trip at QC 9V) */
 	bq25601_set_wdt_rst(0x1);	/* Kick watchdog */
 	bq25601_set_sys_min(0x5);	/* Minimum system voltage 3.5V */
 	bq25601_set_iprechg(0x8);	/* Precharge current 540mA */
@@ -1199,6 +1202,10 @@ static int bq25601_parse_dt(struct bq25601_info *info,
 		info->chg_props.alias_name = "bq25601";
 		pr_info("%s: no alias name\n", __func__);
 	}
+	bq25601_en_gpio = of_get_named_gpio(np, "vivo,enable-gpio", 0);
+	if (bq25601_en_gpio < 0)
+		pr_info("%s: no vivo,enable-gpio (%d)\n", __func__,
+			bq25601_en_gpio);
 	/*
 	 * bq25601_en_pin = of_get_named_gpio(np,"gpio_bq25601_en",0);
 	 * if(bq25601_en_pin < 0){
@@ -1296,6 +1303,22 @@ static int bq25601_driver_probe(struct i2c_client *client,
 
 	bq25601_hw_component_detect();
 	charging_hw_init();
+
+	/* Stock's bq25601d_probe() claims vivo,enable-gpio and drives it low
+	 * (the chip's enable); nothing did here, leaving the pin unclaimed.
+	 */
+	if (gpio_is_valid(bq25601_en_gpio)) {
+		ret = devm_gpio_request_one(&client->dev, bq25601_en_gpio,
+					    GPIOF_OUT_INIT_LOW,
+					    "bq25601_enable");
+		if (ret < 0)
+			pr_info("%s: enable gpio %d request failed (%d)\n",
+				__func__, bq25601_en_gpio, ret);
+	}
+	/* The chip powers up charging-enabled and unmanaged; leave it off until
+	 * the charger manager turns it on (QC2.0 parallel charging).
+	 */
+	bq25601_set_chg_config(0);
 
 	/* Register charger device */
 	info->chg_dev = charger_device_register(info->chg_dev_name,

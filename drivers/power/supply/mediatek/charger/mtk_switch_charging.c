@@ -108,6 +108,15 @@ static bool hvdcp_par_on;
 static unsigned long hvdcp_par_fail;	/* jiffies of first miss, 0 = none */
 static bool hvdcp_par_bad;
 
+/* The bq25601D never starts charging on this board under Linux (CHRG_STAT stays
+ * 00 with input good, no faults, /CE low, CHG_CONFIG=1 - checked for 50 s, and
+ * battery current is ~1.2A with it on vs ~2.0A with chg1 alone). Until the
+ * missing piece is found it's opt-in: echo 1 > .../parameters/hvdcp_parallel
+ */
+static bool hvdcp_parallel;
+module_param(hvdcp_parallel, bool, 0644);
+MODULE_PARM_DESC(hvdcp_parallel, "try the bq25601D as a QC2.0 parallel charger");
+
 static u32 hvdcp_chg1_ichg_ua(int t10)
 {
 	if (t10 >= 491)
@@ -158,7 +167,7 @@ static void swchg_hvdcp_parallel(struct charger_manager *info, bool charging)
 	if (mtk_hvdcp_connected(info))
 		charger_dev_set_mivr(info->chg1_dev, HVDCP_VINDPM_UV);
 
-	want = charging && swchgalg->state == CHR_CC &&
+	want = hvdcp_parallel && charging && swchgalg->state == CHR_CC &&
 	       mtk_hvdcp_connected(info) &&
 	       vbus >= HVDCP_PAR_MIN_VBUS_MV &&
 	       soc < HVDCP_PAR_MAX_SOC &&

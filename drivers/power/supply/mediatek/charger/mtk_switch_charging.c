@@ -99,12 +99,13 @@ static int _uA_to_mA(int uA)
 #define HVDCP_PAR_MAX_TEMP_C10		450
 
 static bool hvdcp_par_on;
-/* Consecutive cycles the parallel chip was enabled but reported not charging;
- * past HVDCP_PAR_FAIL_CYCLES it's written off for this plug-in and chg1 runs
- * alone, so a parallel path that doesn't work never makes QC slower than 5V.
+/* How long the parallel chip was enabled but reported not charging; past
+ * HVDCP_PAR_FAIL_MS it's written off for this plug-in and chg1 runs alone, so
+ * a parallel path that doesn't work never makes QC slower than 5V. Wall time,
+ * not cycles: the charger thread also wakes on events, so cycles can be ~3 s.
  */
-#define HVDCP_PAR_FAIL_CYCLES	3
-static int hvdcp_par_fail;
+#define HVDCP_PAR_FAIL_MS	45000
+static unsigned long hvdcp_par_fail;	/* jiffies of first miss, 0 = none */
 static bool hvdcp_par_bad;
 
 static u32 hvdcp_chg1_ichg_ua(int t10)
@@ -199,12 +200,15 @@ static void swchg_hvdcp_parallel(struct charger_manager *info, bool charging)
 
 		if (charger_dev_is_charging_active(par, &active) >= 0 &&
 		    !active) {
-			if (++hvdcp_par_fail >= HVDCP_PAR_FAIL_CYCLES) {
+			if (!hvdcp_par_fail)
+				hvdcp_par_fail = jiffies | 1;
+			if (time_after(jiffies, hvdcp_par_fail +
+				       msecs_to_jiffies(HVDCP_PAR_FAIL_MS))) {
 				hvdcp_par_bad = true;
 				want = false;
 				charger_dev_enable(par, false);
-				chr_err("[hvdcp]parallel chip enabled but not charging for %d cycles, giving up until unplug\n",
-					HVDCP_PAR_FAIL_CYCLES);
+				chr_err("[hvdcp]parallel chip enabled but not charging for %d ms, giving up until unplug\n",
+					HVDCP_PAR_FAIL_MS);
 			}
 		} else {
 			hvdcp_par_fail = 0;

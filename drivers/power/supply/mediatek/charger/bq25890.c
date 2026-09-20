@@ -2007,14 +2007,18 @@ skip_bc12:
 	} else if (!pg_stat && info->plugged) {
 		cancel_delayed_work(&info->recheck_work);
 		/*
-		 * Only a DCP can run PE2.0, and only PE2.0 TA re-negotiation
-		 * yanks VBUS for ~1s while still plugged. Debounce that case;
-		 * for SDP/CDP/non-standard there is no such blip, so commit the
-		 * unplug immediately (plugout_work still re-checks PG).
+		 * Debounce every type. A DCP running PE2.0 re-negotiation yanks
+		 * VBUS for ~1s, and a weak host port (PC USB, thin cable) can
+		 * also lose VBUS for ~0.85s when the load steps up (display
+		 * wake) while the charger already sits at its VINDPM limit:
+		 * the chip flags PG=0, the old "commit immediately" path tore
+		 * the USB gadget down and re-enumerated it 0.85s later - the
+		 * "random USB reconnect" with nobody touching the cable.
+		 * plugout_work re-checks PG after the delay and ignores the
+		 * blip if VBUS is back; a real unplug is only delayed by 1.2s.
 		 */
 		schedule_delayed_work(&info->plugout_work,
-			info->chg_type == STANDARD_CHARGER ?
-				msecs_to_jiffies(1200) : 0);
+				      msecs_to_jiffies(1200));
 	}
 
 	if (info->chg_type != org_chg_type)

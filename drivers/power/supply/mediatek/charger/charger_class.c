@@ -316,6 +316,16 @@ int charger_dev_is_charging_done(struct charger_device *chg_dev, bool *done)
 }
 EXPORT_SYMBOL(charger_dev_is_charging_done);
 
+int charger_dev_is_hvdcp(struct charger_device *chg_dev, bool *hvdcp)
+{
+	if (chg_dev != NULL && chg_dev->ops != NULL &&
+	    chg_dev->ops->is_hvdcp)
+		return chg_dev->ops->is_hvdcp(chg_dev, hvdcp);
+
+	return -ENOTSUPP;
+}
+EXPORT_SYMBOL(charger_dev_is_hvdcp);
+
 int charger_dev_enable_vbus_ovp(struct charger_device *chg_dev, bool en)
 {
 	if (chg_dev != NULL && chg_dev->ops != NULL &&

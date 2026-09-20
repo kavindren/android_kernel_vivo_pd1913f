@@ -304,6 +304,11 @@ struct charger_manager {
 	struct charger_consumer *chg1_consumer;
 
 	struct charger_device *chg2_dev;
+	/* bq25601D used in parallel with chg1 while a QC2.0 (9V) adapter is
+	 * attached; deliberately not chg2_dev, which would switch on the dual
+	 * algorithm's PE-gated paths in mtk_charger.c.
+	 */
+	struct charger_device *par_chg_dev;
 	struct notifier_block chg2_nb;
 	struct charger_data chg2_data;
 
@@ -445,6 +450,7 @@ extern int mtk_linear_charging_init(struct charger_manager *info);
 extern void _wake_up_charger(struct charger_manager *info);
 extern int mtk_get_dynamic_cv(struct charger_manager *info, unsigned int *cv);
 extern bool is_dual_charger_supported(struct charger_manager *info);
+extern bool mtk_hvdcp_connected(struct charger_manager *info);
 extern int charger_enable_vbus_ovp(struct charger_manager *pinfo, bool enable);
 extern bool is_typec_adapter(struct charger_manager *info);
 

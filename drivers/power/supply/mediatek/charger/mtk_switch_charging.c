@@ -74,9 +74,112 @@ static int _uA_to_mA(int uA)
 		return uA / 1000;
 }
 
+/*
+ * QC2.0 (9V) with the bq25601D charging in parallel with the bq25890.
+ *
+ * Per-chip battery current by battery temperature (0.1 C) is the stock
+ * "screen on" table, vivo,9v-primary-fbon-tc-data / vivo,9v-parallel-fbon-tc-data
+ * in the stock FDT (~1.4A + ~1.2A = 2.6A, what stock delivers over QC2.0). The
+ * stock stack raises these with the screen off; that isn't replicated.
+ * The parallel chip only runs during the constant-current phase (vbat below
+ * ~4.3V, soc below 90%) so the two chips never have to share end-of-charge
+ * termination, and never at 5V: stock's 5v-parallel table is 0mA.
+ */
+#define HVDCP_CHG1_INPUT_UA		1100000
+#define HVDCP_CHG2_INPUT_UA		900000
+#define HVDCP_PAR_MIN_VBUS_MV		7000
+#define HVDCP_PAR_MAX_VBAT_MV		4300
+#define HVDCP_PAR_RESUME_VBAT_MV	4250
+#define HVDCP_PAR_MAX_SOC		90
+#define HVDCP_PAR_MIN_TEMP_C10		100
+#define HVDCP_PAR_MAX_TEMP_C10		450
+
+static bool hvdcp_par_on;
+
+static u32 hvdcp_chg1_ichg_ua(int t10)
+{
+	if (t10 >= 491)
+		return 512000;
+	if (t10 >= 471)
+		return 750000;
+	if (t10 >= 451)
+		return 1000000;
+	if (t10 >= 431)
+		return 1100000;
+	if (t10 >= 401)
+		return 1200000;
+	return 1400000;
+}
+
+static u32 hvdcp_chg2_ichg_ua(int t10)
+{
+	if (t10 >= 481)
+		return 512000;
+	if (t10 >= 461)
+		return 650000;
+	if (t10 >= 431)
+		return 800000;
+	if (t10 >= 401)
+		return 1000000;
+	return 1200000;
+}
+
+static void swchg_hvdcp_parallel(struct charger_manager *info, bool charging)
+{
+	struct switch_charging_alg_data *swchgalg = info->algorithm_data;
+	struct charger_device *par;
+	bool want;
+	int vbat, vbus, soc, t10;
+	u32 cv = 0;
+
+	if (!info->par_chg_dev)
+		info->par_chg_dev = get_charger_by_name("secondary_chg");
+	par = info->par_chg_dev;
+	if (!par)
+		return;
+
+	vbat = battery_get_bat_voltage();
+	vbus = battery_get_vbus();
+	soc = battery_get_soc();
+	t10 = battery_get_bat_temperature() * 10;
+
+	want = charging && swchgalg->state == CHR_CC &&
+	       mtk_hvdcp_connected(info) &&
+	       vbus >= HVDCP_PAR_MIN_VBUS_MV &&
+	       soc < HVDCP_PAR_MAX_SOC &&
+	       t10 >= HVDCP_PAR_MIN_TEMP_C10 && t10 < HVDCP_PAR_MAX_TEMP_C10;
+	if (want) {
+		if (hvdcp_par_on ? vbat >= HVDCP_PAR_MAX_VBAT_MV :
+				   vbat >= HVDCP_PAR_RESUME_VBAT_MV)
+			want = false;
+	}
+
+	if (want) {
+		mtk_get_dynamic_cv(info, &cv);
+		charger_dev_set_constant_voltage(par, cv);
+		charger_dev_set_input_current(par, HVDCP_CHG2_INPUT_UA);
+		charger_dev_set_charging_current(par,
+						 hvdcp_chg2_ichg_ua(t10));
+		charger_dev_enable(par, true);
+	} else {
+		charger_dev_enable(par, false);
+	}
+	/* Keep its watchdog fed either way: on expiry the chip resets to its
+	 * defaults, i.e. charging enabled and unmanaged.
+	 */
+	charger_dev_kick_wdt(par);
+
+	if (want != hvdcp_par_on)
+		chr_err("[hvdcp]parallel %s: vbus %d vbat %d soc %d t %d state %d\n",
+			want ? "ON" : "OFF", vbus, vbat, soc, t10,
+			swchgalg->state);
+	hvdcp_par_on = want;
+}
+
 static void _disable_all_charging(struct charger_manager *info)
 {
 	charger_dev_enable(info->chg1_dev, false);
+	swchg_hvdcp_parallel(info, false);
 
 	if (mtk_pe20_get_is_enable(info)) {
 		mtk_pe20_set_is_enable(info, false);
@@ -260,6 +363,15 @@ static void swchg_select_charging_current_limit(struct charger_manager *info)
 		mtk_pe_set_charging_current(info,
 					&pdata->charging_current_limit,
 					&pdata->input_current_limit);
+		/* Parallel active: share the 9V/2A adapter between two chips,
+		 * so cap this one at its stock 9V current. Otherwise it runs
+		 * alone at the normal DCP current (input draw at 9V is lower).
+		 */
+		if (hvdcp_par_on && mtk_hvdcp_connected(info)) {
+			pdata->input_current_limit = HVDCP_CHG1_INPUT_UA;
+			pdata->charging_current_limit = hvdcp_chg1_ichg_ua(
+				battery_get_bat_temperature() * 10);
+		}
 	} else if (info->chr_type == CHARGING_HOST) {
 		pdata->input_current_limit =
 				info->data.charging_host_charger_current;
@@ -413,9 +525,14 @@ static void swchg_turn_on_charging(struct charger_manager *info)
 					info->chg1_data.input_current_limit);
 		chr_err("In meta mode, disable charging and set input current limit to 200mA\n");
 	} else {
-		mtk_pe20_start_algorithm(info);
-		if (mtk_pe20_get_is_connect(info) == false)
-			mtk_pe_start_algorithm(info);
+		/* PE+/PE+2.0 pulses VBUS looking for a pump-express TA; leave
+		 * a negotiated QC2.0 adapter alone.
+		 */
+		if (!mtk_hvdcp_connected(info)) {
+			mtk_pe20_start_algorithm(info);
+			if (mtk_pe20_get_is_connect(info) == false)
+				mtk_pe_start_algorithm(info);
+		}
 
 		swchg_select_charging_current_limit(info);
 		if (info->chg1_data.input_current_limit == 0
@@ -428,6 +545,7 @@ static void swchg_turn_on_charging(struct charger_manager *info)
 	}
 
 	charger_dev_enable(info->chg1_dev, charging_enable);
+	swchg_hvdcp_parallel(info, charging_enable);
 }
 
 static int mtk_switch_charging_plug_in(struct charger_manager *info)
@@ -447,6 +565,7 @@ static int mtk_switch_charging_plug_out(struct charger_manager *info)
 	struct switch_charging_alg_data *swchgalg = info->algorithm_data;
 
 	swchgalg->total_charging_time = 0;
+	hvdcp_par_on = false;
 
 	mtk_pe20_set_is_cable_out_occur(info, true);
 	mtk_pe_set_is_cable_out_occur(info, true);

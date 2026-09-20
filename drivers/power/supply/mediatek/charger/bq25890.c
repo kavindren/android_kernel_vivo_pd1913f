@@ -571,6 +571,23 @@ void bq25890_set_ico_en_start(unsigned int val)
 	    );
 }
 
+/*
+ * REG02[3] HVDCP_EN: after BC1.2 classifies a DCP the chip runs the QC2.0
+ * handshake and asks the adapter for 9V (VBUS_STAT = 100b). Set explicitly
+ * rather than relying on the power-on default, which nothing on this board
+ * guarantees. MAXC_EN (REG02[2], 12V MaxCharge) is left off.
+ */
+void bq25890_set_hvdcp_en(unsigned int val)
+{
+	unsigned int ret = 0;
+
+	ret = bq25890_config_interface((unsigned char) (bq25890_CON2),
+				       (unsigned char) (val),
+				       (unsigned char) (CON2_HVDCP_EN_MASK),
+				       (unsigned char) (CON2_HVDCP_EN_SHIFT)
+	    );
+}
+
 void bq25890_set_force_dpdm(unsigned int val)
 {
 	unsigned int ret = 0;
@@ -1236,6 +1253,9 @@ static int bq25890_get_charger_type(struct bq25890_info *info)
 		CHR_Type_num = CHARGING_HOST;
 		break;
 	case 3: /* DCP */
+		CHR_Type_num = STANDARD_CHARGER;
+		break;
+	case 4: /* HVDCP (QC2.0, VBUS raised to 9V): a DCP for everything upstream */
 		CHR_Type_num = STANDARD_CHARGER;
 		break;
 	case 5: /* Unknown adapter */
@@ -1972,6 +1992,7 @@ static irqreturn_t bq25890_irq_handler(int irq, void *data)
 		 * recheck_work below stays as a passive (non-forcing) backstop
 		 * for boards whose follow-up IRQ is unreliable.
 		 */
+		bq25890_set_hvdcp_en(1);
 		bq25890_set_force_dpdm(1);
 		for (i = 0; i < 10; i++) {
 			msleep(500);
@@ -2089,6 +2110,13 @@ static int bq25890_do_event(struct charger_device *chg_dev, u32 event, u32 args)
 	return 0;
 }
 
+static int bq25890_is_hvdcp(struct charger_device *chg_dev, bool *hvdcp)
+{
+	/* live read: VBUS_STAT (REG0B[7:5]) == 100b means HVDCP */
+	*hvdcp = (bq25890_get_vbus_state() == 4);
+	return 0;
+}
+
 static struct charger_ops bq25890_chg_ops = {
 #if 0
 	.enable_hz = bq25890_enable_hz,
@@ -2106,6 +2134,7 @@ static struct charger_ops bq25890_chg_ops = {
 	.kick_wdt = bq25890_reset_watch_dog_timer,
 	.set_mivr = bq25890_set_vindpm_voltage,
 	.is_charging_done = bq25890_get_charging_status,
+	.is_hvdcp = bq25890_is_hvdcp,
 
 	/* Safety timer */
 	.enable_safety_timer = bq25890_enable_safetytimer,

@@ -1399,6 +1399,8 @@ static int mtk_charger_plug_out(struct charger_manager *info)
 	charger_dev_set_input_current(info->chg1_dev, 100000);
 	charger_dev_set_mivr(info->chg1_dev, info->data.min_charger_voltage);
 	charger_dev_plug_out(info->chg1_dev);
+	if (info->par_chg_dev)
+		charger_dev_enable(info->par_chg_dev, false);
 	return 0;
 }
 
@@ -1453,15 +1455,32 @@ static int mtk_chgstat_notify(struct charger_manager *info)
 	return ret;
 }
 
+/* True while the primary charger reports a negotiated QC2.0/HVDCP adapter. */
+bool mtk_hvdcp_connected(struct charger_manager *info)
+{
+	bool hvdcp = false;
+
+	if (charger_dev_is_hvdcp(info->chg1_dev, &hvdcp) < 0)
+		return false;
+	return hvdcp;
+}
+
+/* QC2.0 puts 9V on VBUS by design; anything above this is still a fault */
+#define HVDCP_VBUS_MAX_UV	10500000
+
 /* return false if vbus is over max_charger_voltage */
 static bool mtk_chg_check_vbus(struct charger_manager *info)
 {
 	int vchr = 0;
+	int limit = info->data.max_charger_voltage;
+
+	if (limit < HVDCP_VBUS_MAX_UV && mtk_hvdcp_connected(info))
+		limit = HVDCP_VBUS_MAX_UV;
 
 	vchr = battery_get_vbus() * 1000; /* uV */
-	if (vchr > info->data.max_charger_voltage) {
+	if (vchr > limit) {
 		chr_err("%s: vbus(%d mV) > %d mV\n", __func__, vchr / 1000,
-			info->data.max_charger_voltage / 1000);
+			limit / 1000);
 		return false;
 	}
 

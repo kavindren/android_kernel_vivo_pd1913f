@@ -1246,6 +1246,18 @@ static int bq25601_do_event(struct charger_device *chg_dev, u32 event,
 	return 0;
 }
 
+static int bq25601_is_charging_active(struct charger_device *chg_dev,
+				      bool *active)
+{
+	unsigned char val = 0;
+
+	/* REG08 CHRG_STAT: 01 pre-charge, 10 fast charge */
+	bq25601_read_interface(bq25601_CON8, &val, CON8_CHRG_STAT_MASK,
+			       CON8_CHRG_STAT_SHIFT);
+	*active = (val == 1 || val == 2);
+	return 0;
+}
+
 static struct charger_ops bq25601_chg_ops = {
 #if 0
 	.enable_hz = bq25601_enable_hz,
@@ -1263,6 +1275,7 @@ static struct charger_ops bq25601_chg_ops = {
 	.kick_wdt = bq25601_reset_watch_dog_timer,
 	.set_mivr = bq25601_set_vindpm_voltage,
 	.is_charging_done = bq25601_get_charging_status,
+	.is_charging_active = bq25601_is_charging_active,
 
 	/* Safety timer */
 	.enable_safety_timer = bq25601_enable_safetytimer,

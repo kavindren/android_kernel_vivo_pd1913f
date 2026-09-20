@@ -95,6 +95,13 @@ static int _uA_to_mA(int uA)
 #define HVDCP_PAR_MAX_TEMP_C10		450
 
 static bool hvdcp_par_on;
+/* Consecutive cycles the parallel chip was enabled but reported not charging;
+ * past HVDCP_PAR_FAIL_CYCLES it's written off for this plug-in and chg1 runs
+ * alone, so a parallel path that doesn't work never makes QC slower than 5V.
+ */
+#define HVDCP_PAR_FAIL_CYCLES	3
+static int hvdcp_par_fail;
+static bool hvdcp_par_bad;
 
 static u32 hvdcp_chg1_ichg_ua(int t10)
 {
@@ -148,6 +155,9 @@ static void swchg_hvdcp_parallel(struct charger_manager *info, bool charging)
 	       vbus >= HVDCP_PAR_MIN_VBUS_MV &&
 	       soc < HVDCP_PAR_MAX_SOC &&
 	       t10 >= HVDCP_PAR_MIN_TEMP_C10 && t10 < HVDCP_PAR_MAX_TEMP_C10;
+	if (hvdcp_par_bad)
+		want = false;
+
 	if (want) {
 		if (hvdcp_par_on ? vbat >= HVDCP_PAR_MAX_VBAT_MV :
 				   vbat >= HVDCP_PAR_RESUME_VBAT_MV)
@@ -176,6 +186,25 @@ static void swchg_hvdcp_parallel(struct charger_manager *info, bool charging)
 	 * defaults, i.e. charging enabled and unmanaged.
 	 */
 	charger_dev_kick_wdt(par);
+
+	if (want && hvdcp_par_on) {
+		bool active = false;
+
+		if (charger_dev_is_charging_active(par, &active) >= 0 &&
+		    !active) {
+			if (++hvdcp_par_fail >= HVDCP_PAR_FAIL_CYCLES) {
+				hvdcp_par_bad = true;
+				want = false;
+				charger_dev_enable(par, false);
+				chr_err("[hvdcp]parallel chip enabled but not charging for %d cycles, giving up until unplug\n",
+					HVDCP_PAR_FAIL_CYCLES);
+			}
+		} else {
+			hvdcp_par_fail = 0;
+		}
+	} else {
+		hvdcp_par_fail = 0;
+	}
 
 	if (want != hvdcp_par_on)
 		chr_err("[hvdcp]parallel %s: vbus %d vbat %d soc %d t %d state %d\n",
@@ -574,6 +603,8 @@ static int mtk_switch_charging_plug_out(struct charger_manager *info)
 
 	swchgalg->total_charging_time = 0;
 	hvdcp_par_on = false;
+	hvdcp_par_fail = 0;
+	hvdcp_par_bad = false;
 
 	mtk_pe20_set_is_cable_out_occur(info, true);
 	mtk_pe_set_is_cable_out_occur(info, true);

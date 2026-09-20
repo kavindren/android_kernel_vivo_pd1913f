@@ -154,6 +154,8 @@ struct charger_ops {
 	int (*is_charging_done)(struct charger_device *dev, bool *done);
 	/* QC2.0/HVDCP adapter negotiated (VBUS raised to 9V) */
 	int (*is_hvdcp)(struct charger_device *dev, bool *hvdcp);
+	/* chip itself reports pre-charge/fast-charge (not just "enabled") */
+	int (*is_charging_active)(struct charger_device *dev, bool *active);
 	int (*set_pe20_efficiency_table)(struct charger_device *dev);
 	int (*dump_registers)(struct charger_device *dev);
 
@@ -258,6 +260,8 @@ extern int charger_dev_is_charging_done(
 	struct charger_device *charger_dev, bool *done);
 extern int charger_dev_is_hvdcp(
 	struct charger_device *charger_dev, bool *hvdcp);
+extern int charger_dev_is_charging_active(
+	struct charger_device *charger_dev, bool *active);
 extern int charger_dev_enable_powerpath(
 	struct charger_device *charger_dev, bool en);
 extern int charger_dev_enable_safety_timer(

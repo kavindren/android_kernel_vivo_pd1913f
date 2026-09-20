@@ -39,6 +39,10 @@
 #include <linux/slab.h>
 #include <linux/proc_fs.h>
 #include <linux/reboot.h>
+#include <linux/kernel.h>
+#include <linux/mutex.h>
+#include <linux/jiffies.h>
+#include <linux/workqueue.h>
 #include <mach/mtk_pmic.h>
 #include <mt-plat/mtk_battery.h>
 #include <mt-plat/upmu_common.h>
@@ -105,6 +109,49 @@ int lt_gap;
 int low_tracking_enable;
 int fg_vbat2_lt;
 int fg_vbat2_ht;
+
+/*
+ * UI percent behaviour. The stock kernel's (closed) gauge keeps the displayed
+ * percent from drifting away from the real one; its knobs are in the stock
+ * FDT's vivo,battery node and are reproduced here:
+ *   vivo,percnet-sync-delta/-cumulative  4 / 9
+ *   vivo,soft-rise-percent/-cumulative   92 / 10
+ *   vivo,soft-term-percent/-cumulative   99 / 48
+ * Stock counts these in its ~10 s charger-monitor cycles, hence the tick.
+ */
+#define FGR_UI_TICK_MS			10000
+#define FGR_UI_SYNC_DELTA_PCT		4
+#define FGR_UI_SYNC_TICKS		9
+#define FGR_UI_SOFT_RISE_PCT		92
+#define FGR_UI_SOFT_RISE_TICKS		10
+#define FGR_UI_SOFT_TERM_PCT		99
+#define FGR_UI_SOFT_TERM_TICKS		48
+/* persisted coulomb SOC vs boot OCV SOC further apart than this = stale */
+#define FGR_CSOC_BOOT_MISMATCH_PCT	12
+
+/* false when the persisted SOC disagrees with the boot voltage and can't be
+ * corrected (charger present -> boot vbat inflated); UI sync stays off until
+ * the charger reports end-of-charge and the coulomb counter is re-anchored.
+ */
+static bool csoc_trusted;
+static int ui_sync_cnt;
+static int ui_rise_cnt;
+static int ui_term_cnt;
+static DEFINE_MUTEX(fgr_ui_lock);
+static struct delayed_work fgr_ui_tick_work;
+
+/* soft-term: UI does not show 100% until the counter runs out; the charger's
+ * end-of-charge (fgr_chr_full_handler) goes straight to 100%.
+ */
+static int fgr_ui_clamp_rise(int old_ui, int new_ui)
+{
+	int cap = FGR_UI_SOFT_TERM_PCT * 100;
+
+	if (new_ui > old_ui && new_ui > cap &&
+	    ui_term_cnt < FGR_UI_SOFT_TERM_TICKS)
+		new_ui = old_ui > cap ? old_ui : cap;
+	return new_ui;
+}
 
 /* Interrupt control */
 int fg_bat_int2_ht_en;
@@ -417,20 +464,35 @@ void fgr_bat_int2_h_handler(void)
 	if (ui_gap_ht > 100)
 		ui_gap_ht = 100;
 
-	if (ui_gap_ht > 0)
-		prev_car_bat0 = _car;
+	mutex_lock(&fgr_ui_lock);
+	/* soft-rise: from 92% up the UI advances at most 1% per 10 ticks; the
+	 * coulombs keep accumulating in the meantime (prev_car_bat0 stays).
+	 */
+	if (ui_gap_ht > 0 && ui_soc >= FGR_UI_SOFT_RISE_PCT * 100 &&
+	    ui_rise_cnt < FGR_UI_SOFT_RISE_TICKS) {
+		bm_err("[fg_bat_int2_h_handler]soft-rise hold ui_soc %d cnt %d\n",
+			ui_soc, ui_rise_cnt);
+		ui_gap_ht = 0;
+	}
 
-	if (ui_soc >= 10000)
-		ui_soc = 10000;
-	else {
-		if ((ui_soc + ui_gap_ht) >= 10000)
-			ui_soc = 10000;
-		else
-			ui_soc = ui_soc + ui_gap_ht;
+	if (ui_gap_ht > 0) {
+		prev_car_bat0 = _car;
+		ui_rise_cnt = 0;
 	}
 
 	if (ui_soc >= 10000)
 		ui_soc = 10000;
+	else {
+		int new_ui = ui_soc + ui_gap_ht;
+
+		if (new_ui >= 10000)
+			new_ui = 10000;
+		ui_soc = fgr_ui_clamp_rise(ui_soc, new_ui);
+	}
+
+	if (ui_soc >= 10000)
+		ui_soc = 10000;
+	mutex_unlock(&fgr_ui_lock);
 
 	fg_update_fg_bat_int2_ht();
 	fg_update_fg_bat_int2_lt();
@@ -509,12 +571,18 @@ void fgr_chr_full_handler(void)
 	bm_err("[%s]EOC: ui_soc %d -> 10000, c_soc %d -> 10000, vbat %d\n",
 		__func__, ui_soc, fg_c_soc, vbat);
 
+	mutex_lock(&fgr_ui_lock);
 	fg_c_d0_ocv = SOC_to_OCV_c(10000);
 	Set_fg_c_d0_by_ocv(fg_c_d0_ocv);
 	fg_adc_reset();
 	fg_update_c_dod();
 	soc = fg_c_soc;
 	ui_soc = 10000;
+	csoc_trusted = true;
+	ui_sync_cnt = 0;
+	ui_rise_cnt = 0;
+	ui_term_cnt = 0;
+	mutex_unlock(&fgr_ui_lock);
 
 	prev_car_bat0 = get_fg_hw_car();
 	fg_update_fg_bat_int2_ht();
@@ -2001,10 +2069,27 @@ void fgr_dod_init(void)
 	int init_swocv = get_ptim_vbat();
 	int con0_soc = get_con0_soc();
 	int con0_uisoc = get_rtc_ui_soc();
+	int ocv_soc = OCV_to_SOC_c(init_swocv);
+	bool mismatch;
 
 	rtc_ui_soc = UNIT_TRANS_100 * con0_uisoc;
 
-	if (rtc_ui_soc == 0 || con0_soc == 0) {
+	/* The persisted UI/coulomb SOC pair is trusted blindly, but both live in
+	 * registers that can go stale (crash/flash reboots, a long time off). If
+	 * the persisted coulomb SOC is far from what the boot voltage says, and no
+	 * charger is inflating that voltage, take the OCV instead.
+	 */
+	mismatch = rtc_ui_soc != 0 && con0_soc != 0 && ocv_soc >= 0 &&
+		abs(UNIT_TRANS_100 * con0_soc - ocv_soc) >
+		FGR_CSOC_BOOT_MISMATCH_PCT * UNIT_TRANS_100;
+	if (mismatch)
+		bm_err("[dod_init]persisted soc %d (ui %d) vs boot ocv soc %d (vbat %d): mismatch, charger %d\n",
+			con0_soc, con0_uisoc, ocv_soc, init_swocv,
+			upmu_get_rgs_chrdet());
+
+	if (rtc_ui_soc == 0 || con0_soc == 0 ||
+	    (mismatch && upmu_get_rgs_chrdet() == 0)) {
+		csoc_trusted = true;
 		rtc_ui_soc = OCV_to_SOC_c(init_swocv);
 		fg_c_d0_soc = rtc_ui_soc;
 
@@ -2024,6 +2109,7 @@ void fgr_dod_init(void)
 	} else {
 		ui_d0_soc = rtc_ui_soc;
 		fg_c_d0_soc = UNIT_TRANS_100 * con0_soc;
+		csoc_trusted = !mismatch;
 	}
 
 
@@ -2054,6 +2140,77 @@ void fgr_dod_init(void)
 		soc, con0_uisoc, con0_soc);
 }
 
+/*
+ * Periodic UI housekeeping (see the FGR_UI_* comment): counts the soft-rise and
+ * soft-term cycles and does the percent sync - nudge the UI 1% towards the
+ * coulomb SOC once they've differed by >= 4 points for 9 ticks in a row.
+ */
+static void fgr_ui_tick(struct work_struct *work)
+{
+	int chr, real, ui;
+	bool changed = false;
+
+	if (!fg_interrupt_check())
+		goto rearm;
+
+	chr = get_charger_exist();
+
+	mutex_lock(&fgr_ui_lock);
+	real = (soc + 50) / 100;
+	if (real > 100)
+		real = 100;
+	if (real < 0)
+		real = 0;
+	ui = (ui_soc + 50) / 100;
+
+	if (ui_rise_cnt < FGR_UI_SOFT_RISE_TICKS)
+		ui_rise_cnt++;
+
+	if (chr && ui_soc >= FGR_UI_SOFT_TERM_PCT * 100 &&
+	    real >= FGR_UI_SOFT_TERM_PCT) {
+		if (ui_term_cnt < FGR_UI_SOFT_TERM_TICKS)
+			ui_term_cnt++;
+	} else {
+		ui_term_cnt = 0;
+	}
+
+	if (csoc_trusted && ui_soc >= 100 &&
+	    abs(real - ui) >= FGR_UI_SYNC_DELTA_PCT) {
+		if (++ui_sync_cnt >= FGR_UI_SYNC_TICKS) {
+			int old = ui_soc;
+			int n = old + (real > ui ? 100 : -100);
+
+			ui_sync_cnt = 0;
+			if (n < 100)
+				n = 100;
+			if (n > 10000)
+				n = 10000;
+			if (n > old)
+				n = fgr_ui_clamp_rise(old, n);
+			if (n != old) {
+				bm_err("[fgr_ui_tick]sync ui_soc %d -> %d (real %d, chr %d)\n",
+					old, n, real, chr);
+				ui_soc = n;
+				changed = true;
+			}
+		}
+	} else {
+		ui_sync_cnt = 0;
+	}
+
+	if (changed) {
+		fg_update_fg_bat_int2_ht();
+		fg_update_fg_bat_int2_lt();
+		set_kernel_uisoc(ui_soc);
+		set_rtc_ui_soc((ui_soc + 50) / 100);
+	}
+	mutex_unlock(&fgr_ui_lock);
+
+rearm:
+	schedule_delayed_work(&fgr_ui_tick_work,
+		msecs_to_jiffies(FGR_UI_TICK_MS));
+}
+
 void battery_recovery_init(void)
 {
 	bool is_bat_exist = 0;
@@ -2076,6 +2233,9 @@ void battery_recovery_init(void)
 		bm_err("battery_recovery: leave fgr_dod_init\n");
 		fg_set_int1();
 		bm_err("battery_recovery: leave fg_set_int1\n");
+		INIT_DELAYED_WORK(&fgr_ui_tick_work, fgr_ui_tick);
+		schedule_delayed_work(&fgr_ui_tick_work,
+			msecs_to_jiffies(FGR_UI_TICK_MS));
 		set_init_flow_done(1);
 		bm_err("battery_recovery: set_init_flow_done\n");
 		set_nvram_fail_status(1);

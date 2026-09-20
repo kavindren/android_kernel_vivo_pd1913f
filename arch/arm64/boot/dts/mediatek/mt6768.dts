@@ -3718,10 +3718,15 @@ defined(CONFIG_MTK_CAM_SECURITY_SUPPORT)
 		TEMPERATURE_TB5 = <(-10)>;
 
 		q_max_mah = <(4500)>;
-		Q_MAX_POS_50 = <(4500)>;
-		Q_MAX_POS_25 = <(4500)>;
-		Q_MAX_POS_0 = <(4200)>;
-		Q_MAX_NEG_10 = <(3800)>;
+		/* Legacy names nothing parses (see g_Q_MAX below, which is what
+		 * the driver really uses); kept equal to the stock id-2 cell's
+		 * vivo,bats-qmax [-10/0/10/25/50 C] = 3180/3300/4200/4740/4810
+		 * so the two sets can't disagree.
+		 */
+		Q_MAX_POS_50 = <(4810)>;
+		Q_MAX_POS_25 = <(4740)>;
+		Q_MAX_POS_0 = <(3300)>;
+		Q_MAX_NEG_10 = <(3180)>;
 		Q_MAX_L_CURRENT = <(200)>;
 		Q_MAX_H_CURRENT = <(2000)>;
 

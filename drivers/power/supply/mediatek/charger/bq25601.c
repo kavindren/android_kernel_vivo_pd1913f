@@ -118,6 +118,15 @@ static const struct i2c_device_id bq25601_i2c_id[] = { {"bq25601", 0}, {"bq25601
 static int bq25601_en_gpio = -1;
 static bool bq25601_charging_on;
 
+/* /CE: high = charging disabled in hardware (vivo,enable-gpio, active high
+ * flags 0 in DT, stock drives it low to charge)
+ */
+static void bq25601_ce(bool disable)
+{
+	if (gpio_is_valid(bq25601_en_gpio))
+		gpio_set_value(bq25601_en_gpio, disable);
+}
+
 static int bq25601_driver_probe(struct i2c_client *client,
 				const struct i2c_device_id *id);
 
@@ -941,7 +950,13 @@ static int bq25601_enable_charging(struct charger_device *chg_dev,
 			 */
 			bq25601_set_en_term(0);
 			bq25601_set_chg_config(0);
+			/* ... and the CE pin cycled high->low as stock's
+			 * ioctrl 0x94 does around every disable/enable
+			 */
+			bq25601_ce(true);
+			msleep(20);
 		}
+		bq25601_ce(false);
 		bq25601_set_chg_config(en);
 		bq25601_charging_on = true;
 	} else {
@@ -949,6 +964,7 @@ static int bq25601_enable_charging(struct charger_device *chg_dev,
 		/* bq25601_config_interface(bq25601_CON3, 0x0, 0x1, 4); */
 		/* enable charging */
 		bq25601_set_chg_config(en);
+		bq25601_ce(true);
 		pr_info("[charging_enable] under test mode: disable charging\n");
 
 		/*bq25601_set_en_hiz(0x1);*/
@@ -1334,7 +1350,7 @@ static int bq25601_driver_probe(struct i2c_client *client,
 	 */
 	if (gpio_is_valid(bq25601_en_gpio)) {
 		ret = devm_gpio_request_one(&client->dev, bq25601_en_gpio,
-					    GPIOF_OUT_INIT_LOW,
+					    GPIOF_OUT_INIT_HIGH,
 					    "bq25601_enable");
 		if (ret < 0)
 			pr_info("%s: enable gpio %d request failed (%d)\n",

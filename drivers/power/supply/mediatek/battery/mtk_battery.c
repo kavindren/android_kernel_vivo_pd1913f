@@ -551,9 +551,15 @@ static int battery_get_property(struct power_supply *psy,
 			int q_max_mah = 0;
 			int q_max_uah = 0;
 
+			/* vivo's profile keeps q_max in mAh (CHARGE_FULL above
+			 * multiplies it by 1000 straight to uAh); MTK's stock
+			 * tables use 0.1mAh, hence the old "/ 10" that made
+			 * Settings show "design capacity 481 mAh, max 4810
+			 * mAh (1000%)".
+			 */
 			q_max_mah =
 				fg_table_cust_data.fg_profile[
-				gm.battery_id].q_max / 10;
+				gm.battery_id].q_max;
 
 			q_max_uah = q_max_mah * 1000;
 			if (q_max_uah <= 100000) {

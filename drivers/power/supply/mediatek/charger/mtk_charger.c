@@ -1622,6 +1622,7 @@ static void check_dynamic_mivr(struct charger_manager *info)
 		if (!mtk_pe40_get_is_connect(info) &&
 			!mtk_pe20_get_is_connect(info) &&
 			!mtk_pe_get_is_connect(info) &&
+			!mtk_hvdcp_connected(info) &&
 			!mtk_pdc_check_charger(info)) {
 
 			vbat = battery_get_bat_voltage();

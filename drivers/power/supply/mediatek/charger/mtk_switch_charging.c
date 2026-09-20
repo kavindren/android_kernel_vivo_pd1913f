@@ -85,6 +85,10 @@ static int _uA_to_mA(int uA)
  * ~4.3V, soc below 90%) so the two chips never have to share end-of-charge
  * termination, and never at 5V: stock's 5v-parallel table is 0mA.
  */
+/* stock's RUNNING_VOTER VINDPM on a 9V source: keeps the input from collapsing
+ * to the 4.5V default when the two chargers together load the adapter
+ */
+#define HVDCP_VINDPM_UV		7800000
 #define HVDCP_CHG1_INPUT_UA		1100000
 #define HVDCP_CHG2_INPUT_UA		900000
 #define HVDCP_PAR_MIN_VBUS_MV		7000
@@ -150,6 +154,9 @@ static void swchg_hvdcp_parallel(struct charger_manager *info, bool charging)
 	soc = battery_get_soc();
 	t10 = battery_get_bat_temperature() * 10;
 
+	if (mtk_hvdcp_connected(info))
+		charger_dev_set_mivr(info->chg1_dev, HVDCP_VINDPM_UV);
+
 	want = charging && swchgalg->state == CHR_CC &&
 	       mtk_hvdcp_connected(info) &&
 	       vbus >= HVDCP_PAR_MIN_VBUS_MV &&
@@ -205,6 +212,9 @@ static void swchg_hvdcp_parallel(struct charger_manager *info, bool charging)
 	} else {
 		hvdcp_par_fail = 0;
 	}
+
+	if (want && hvdcp_par_on)
+		charger_dev_dump_registers(par);
 
 	if (want != hvdcp_par_on)
 		chr_err("[hvdcp]parallel %s: vbus %d vbat %d soc %d t %d state %d\n",

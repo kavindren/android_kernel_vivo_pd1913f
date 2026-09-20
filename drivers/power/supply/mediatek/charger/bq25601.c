@@ -116,6 +116,7 @@ static struct i2c_client *new_client;
 static const struct i2c_device_id bq25601_i2c_id[] = { {"bq25601", 0}, {"bq25601d", 0}, {} };
 
 static int bq25601_en_gpio = -1;
+static bool bq25601_charging_on;
 
 static int bq25601_driver_probe(struct i2c_client *client,
 				const struct i2c_device_id *id);
@@ -882,20 +883,21 @@ void bq25601_set_int_mask(unsigned int val)
  *********************************************************/
 static int bq25601_dump_register(struct charger_device *chg_dev)
 {
-
+	char line[bq25601_REG_NUM * 8 + 1];
 	unsigned char i = 0;
 	unsigned int ret = 0;
+	int n = 0;
 
-	pr_info("[bq25601] ");
 	for (i = 0; i < bq25601_REG_NUM; i++) {
 		ret = bq25601_read_byte(i, &bq25601_reg[i]);
-		if (ret == 0) {
+		if (ret != 1) {
 			pr_info("[bq25601] i2c transfor error\n");
 			return 1;
 		}
-		pr_info("[0x%x]=0x%x ", i, bq25601_reg[i]);
+		n += scnprintf(line + n, sizeof(line) - n, "%x=%02x ", i,
+			       bq25601_reg[i]);
 	}
-	pr_debug("\n");
+	pr_info("[bq25601] regs: %s\n", line);
 	return 0;
 }
 
@@ -932,8 +934,18 @@ static int bq25601_enable_charging(struct charger_device *chg_dev,
 		/* bq25601_config_interface(bq25601_CON3, 0x1, 0x1, 4); */
 		/* enable charging */
 		bq25601_set_en_hiz(0x0);
+		if (!bq25601_charging_on) {
+			/* Stock's enable path (bq25601d_io_input_suspend):
+			 * termination off, and CHG_CONFIG toggled 0->1 to
+			 * start a fresh charge cycle.
+			 */
+			bq25601_set_en_term(0);
+			bq25601_set_chg_config(0);
+		}
 		bq25601_set_chg_config(en);
+		bq25601_charging_on = true;
 	} else {
+		bq25601_charging_on = false;
 		/* bq25601_config_interface(bq25601_CON3, 0x0, 0x1, 4); */
 		/* enable charging */
 		bq25601_set_chg_config(en);
